@@ -1,0 +1,40 @@
+[package]
+name = "data-perf"
+version = "0.1.0"
+description = "数据帧回放工具 — 按帧解析十六进制数据文件并经 UDP 单播/组播发送"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "data_perf_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+memmap2 = "0.9"
+memchr = "2"
+crossbeam-queue = "0.3"
+socket2 = { version = "0.5", features = ["all"] }
+crc = "3"
+thiserror = "2"
+parking_lot = "0.12"
+if-addrs = "0.13"
+encoding_rs = "0.8"
+thread-priority = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Media"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

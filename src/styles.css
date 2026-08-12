@@ -1,0 +1,527 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans-condensed/500.css";
+@import "@fontsource/ibm-plex-sans-condensed/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* ───────────────────────────────────────────────────────────────
+   设计令牌
+
+   隐喻是台式测试仪器，不是网页仪表盘：
+   机身（配置区）是冷灰面板，数据区是下沉的显示屏。
+   四个信号色各自只表示一件事，是语义不是装饰。
+   ─────────────────────────────────────────────────────────────── */
+:root {
+  --chrome: #14171c; /* 机身：配置面板、工具条 */
+  --chrome-hi: #1b1f26; /* 机身受光面：输入框、悬停 */
+  --screen: #0c0e12; /* 显示屏：数据区下沉底色 */
+  --seam: #232830; /* 面板缝：分隔线 */
+  --seam-lit: #2f3742; /* 高光缝：屏幕内沿 */
+
+  --ink: #c9d1db; /* 主读数 */
+  --ink-bright: #e8eef5; /* 被采用的数据体，全屏最亮 */
+  --ink-dim: #6b7684; /* 标签、被丢弃的前缀 */
+  --ink-faint: #454d59; /* 尾部忽略内容、禁用态 */
+
+  /* 信号色：每个只表示一件事 */
+  --sig-insert: #5fd3a0; /* 插入的字节 */
+  --sig-replace: #e8b54a; /* 替换的字节 */
+  --sig-compute: #6aa9f5; /* 计算值：序号 / 长度 / 校验和 */
+  --sig-error: #f0715e; /* 错误 */
+  --sig-live: #7de0c4; /* 运行中指示 */
+
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  --r: 3px; /* 仪器的圆角很紧 */
+  --row-h: 22px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--chrome);
+  color: var(--ink);
+  font: 400 13px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+:focus-visible {
+  outline: 1px solid var(--sig-compute);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── 应用骨架 ─────────────────────────────────────────────── */
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 40px 1fr 26px;
+  grid-template-columns: 268px 1fr;
+  grid-template-areas:
+    "bar    bar"
+    "config screens"
+    "status status";
+}
+
+/* ── 顶栏 ─────────────────────────────────────────────────── */
+.bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--seam);
+  background: var(--chrome);
+}
+
+.bar-mark {
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--sig-compute);
+  flex: none;
+  position: relative;
+}
+.bar-mark::after {
+  content: "";
+  position: absolute;
+  inset: 4px 3px;
+  border-radius: 1px;
+  background: var(--screen);
+}
+
+.bar-title {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  flex: none;
+}
+
+.bar-path {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--ink-dim);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* 路径过长时保留文件名一端 */
+  text-align: left;
+}
+
+.bar-path[data-empty="true"] {
+  color: var(--ink-faint);
+  direction: ltr;
+}
+
+.bar-group {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+/* ── 按钮 ─────────────────────────────────────────────────── */
+.btn {
+  font: 500 12px/1 var(--font-ui);
+  color: var(--ink);
+  background: var(--chrome-hi);
+  border: 1px solid var(--seam);
+  border-radius: var(--r);
+  padding: 6px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--seam-lit);
+  background: #222731;
+}
+.btn:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+.btn[data-primary="true"]:not(:disabled) {
+  color: var(--screen);
+  background: var(--sig-live);
+  border-color: var(--sig-live);
+}
+.btn[data-danger="true"]:not(:disabled) {
+  color: var(--sig-error);
+  border-color: #3a2b2b;
+}
+
+/* ── 配置面板 ─────────────────────────────────────────────── */
+.config {
+  grid-area: config;
+  border-right: 1px solid var(--seam);
+  overflow-y: auto;
+  background: var(--chrome);
+}
+
+.group {
+  border-bottom: 1px solid var(--seam);
+}
+
+/* 面板丝印标签：条压体、大写、宽字距 —— 仪器前面板的写法 */
+.group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  color: var(--ink-dim);
+  text-align: left;
+}
+.group-head:hover {
+  color: var(--ink);
+}
+
+.group-caret {
+  font-size: 8px;
+  color: var(--ink-faint);
+  transition: transform 0.12s ease;
+}
+.group-head[aria-expanded="true"] .group-caret {
+  transform: rotate(90deg);
+}
+
+.group-body {
+  padding: 2px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* ── 表单行 ───────────────────────────────────────────────── */
+.field {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-label {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+
+.input,
+.select {
+  font: 400 12px/1 var(--font-data);
+  color: var(--ink);
+  background: var(--screen);
+  border: 1px solid var(--seam);
+  border-radius: var(--r);
+  padding: 5px 7px;
+  width: 100%;
+  min-width: 0;
+}
+.input:focus,
+.select:focus {
+  border-color: var(--seam-lit);
+}
+
+.select {
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
+.input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 分段选择器：模式互斥 */
+.segments {
+  display: flex;
+  border: 1px solid var(--seam);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.segment {
+  flex: 1;
+  font: 500 11px/1 var(--font-ui);
+  color: var(--ink-dim);
+  background: var(--screen);
+  border: 0;
+  border-right: 1px solid var(--seam);
+  padding: 6px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.segment:last-child {
+  border-right: 0;
+}
+.segment[aria-pressed="true"] {
+  color: var(--screen);
+  background: var(--ink-dim);
+}
+.segment:hover:not([aria-pressed="true"]) {
+  color: var(--ink);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.check input {
+  accent-color: var(--sig-compute);
+  margin: 0;
+}
+
+.hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
+
+/* ── 屏幕区 ───────────────────────────────────────────────── */
+.screens {
+  grid-area: screens;
+  display: grid;
+  grid-auto-rows: 1fr;
+  gap: 1px;
+  background: var(--seam);
+  min-height: 0;
+  min-width: 0;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  background: var(--screen);
+  min-height: 0;
+  min-width: 0;
+}
+
+.screen-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--seam);
+  flex: none;
+}
+
+.screen-name {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  color: var(--ink-dim);
+}
+
+.screen-note {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* 屏幕内沿高光：让数据区读起来是嵌进机身的显示屏 */
+.screen-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+.screen-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+/* ── 原文视图 ─────────────────────────────────────────────── */
+.rows {
+  position: relative;
+  width: 100%;
+  font: 400 12px/var(--row-h) var(--font-data);
+}
+
+.row {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+  white-space: pre;
+  padding-right: 10px;
+}
+.row:hover {
+  background: #12151b;
+}
+.row[data-error="true"] {
+  background: rgba(240, 113, 94, 0.06);
+}
+.row[data-current="true"] {
+  background: rgba(125, 224, 196, 0.09);
+}
+
+.row-no {
+  flex: none;
+  width: 78px;
+  padding-right: 10px;
+  text-align: right;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  border-right: 1px solid #171b22;
+  margin-right: 10px;
+}
+
+/* 三段标注：丢弃的前缀退到背景，被采用的数据体最亮 */
+.seg-prefix {
+  color: var(--ink-dim);
+  opacity: 0.55;
+}
+.seg-data {
+  color: var(--ink-bright);
+}
+.seg-trailing {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.row-len {
+  flex: none;
+  margin-left: auto;
+  padding-left: 14px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.row-err {
+  flex: none;
+  margin-left: auto;
+  padding-left: 14px;
+  color: var(--sig-error);
+}
+
+/* ── 状态栏读数 ───────────────────────────────────────────── */
+.status {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 10px;
+  border-top: 1px solid var(--seam);
+  background: var(--chrome);
+  font: 400 11px/1 var(--font-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+/* 读数字段定宽，数字跳动时布局绝不重排 */
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 12px;
+  border-right: 1px solid var(--seam);
+  flex: none;
+}
+.readout:first-of-type {
+  padding-left: 0;
+}
+
+.readout-key {
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+}
+
+.readout-val {
+  color: var(--ink);
+  min-width: var(--w, auto);
+  text-align: right;
+}
+.readout-val[data-alert="true"] {
+  color: var(--sig-error);
+}
+
+.status-spacer {
+  flex: 1;
+}
+
+.lamp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding-left: 12px;
+}
+.lamp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+.lamp[data-state="running"] .lamp-dot {
+  background: var(--sig-live);
+  box-shadow: 0 0 6px var(--sig-live);
+}
+.lamp[data-state="paused"] .lamp-dot {
+  background: var(--sig-replace);
+}
+.lamp[data-state="error"] .lamp-dot {
+  background: var(--sig-error);
+}
+.lamp-text {
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  color: var(--ink-dim);
+}
+
+/* 时序带：把真实帧间隔画成刻度。抖动看得见，不假装精准。 */
+.tape {
+  flex: none;
+  width: 132px;
+  height: 14px;
+  margin-right: 12px;
+  border-right: 1px solid var(--seam);
+  padding-right: 12px;
+}

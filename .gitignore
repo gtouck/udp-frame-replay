@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+src-tauri/target/
+src-tauri/gen/
+
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# 测试用的大文件
+testdata/*.bin
+testdata/*.big.txt

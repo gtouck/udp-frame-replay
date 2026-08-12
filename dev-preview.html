@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>数据帧回放工具 · 界面预览</title>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!--
+      界面预览入口。
+
+      在普通浏览器里跑真实前端代码，用桩件顶替 Tauri IPC，
+      这样调界面不用每次重编 Rust，也能在没有桌面截图权限的环境里检查渲染。
+      只有这个 HTML 装桩件，src/ 下的应用代码一行都不为测试改动。
+    -->
+    <script type="module">
+      const SAMPLE = [
+        { p: "[TX] 000123 发送 ", d: "01 A5 3F 2B 90 11 4C 1A", t: "" },
+        { p: "[RX] 000124 接收 ", d: "01 A5 40 2B 90 11 4C 1B", t: "" },
+        { p: "[TX] 000125 发送 ", d: "02 B7 3F 2B", t: "  # 心跳" },
+        { p: "[TX] 000126 发送 ", d: "01 A5 3F 2B 90 11 4C 1D", t: "" },
+        { p: "[RX] 000127 接收 ", d: "0C 42 88 91 A0 07", t: "" },
+      ];
+      const ERRORS = {
+        11: ["oddHexDigits", "十六进制字符数为奇数"],
+        21: ["emptyData", "剥离前缀后没有十六进制数据"],
+        41: ["notEnoughFields", "字段数不足，无法定位数据体"],
+      };
+
+      const FILE = {
+        path: "/Users/gtouck/project/data-perf/testdata/sample-utf8.txt",
+        sizeBytes: 268435456,
+        lineCount: 1048576,
+        indexMemoryBytes: 4194304,
+      };
+
+      window.__TAURI_INTERNALS__ = {
+        transformCallback: (cb) => cb,
+        invoke: async (cmd, args) => {
+          if (cmd === "open_file") return FILE;
+          if (cmd === "file_info") return FILE;
+          if (cmd === "close_file") return null;
+          if (cmd === "preview") {
+            const { start, count } = args;
+            const rows = [];
+            for (let i = 0; i < count && start + i < FILE.lineCount; i++) {
+              const lineNo = start + i + 1;
+              const s = SAMPLE[lineNo % SAMPLE.length];
+              const err = ERRORS[lineNo % 1000];
+              rows.push({
+                lineNo,
+                prefix: s.p,
+                data: err ? s.d.slice(0, 5) : s.d,
+                trailing: s.t,
+                byteLen: err ? 2 : (s.d.split(" ").length),
+                truncated: false,
+                error: err ? err[0] : null,
+                errorMsg: err ? err[1] : null,
+              });
+            }
+            return rows;
+          }
+          throw new Error("预览桩件未实现命令：" + cmd);
+        },
+      };
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
