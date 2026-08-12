@@ -6,7 +6,6 @@ use thiserror::Error;
 
 use crate::config::{
     ByteRange, ChecksumAlgo, Endian, MutationConfig, MutationOp, PrefixRule, TimeEpoch, TimeUnit,
-    Width,
 };
 use crate::filter::{parse_hex, CompiledCondition, FieldSplit, FilterError};
 use crate::mutate::checksum;
@@ -325,7 +324,7 @@ fn detect_static_overlap(ops: &[Stage1Op]) -> Result<(), MutateError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Condition, Delimiter, MutationRule, TextOp};
+    use crate::config::{Condition, Delimiter, MutationRule, TextOp, Width};
 
     fn prefix() -> PrefixRule {
         PrefixRule::Fields {

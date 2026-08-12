@@ -438,6 +438,30 @@ pub struct SendConfig {
     pub pacing: PacingConfig,
 }
 
+/// 存盘的配置档。
+///
+/// 手动规则一旦配好就该能复用 —— 换一种数据格式不该从头再配一遍。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
+    /// 档案格式版本，将来改结构时用来做兼容
+    pub version: u32,
+    pub name: String,
+    pub config: SendConfig,
+}
+
+pub const PROFILE_VERSION: u32 = 1;
+
+impl Profile {
+    pub fn new(name: impl Into<String>, config: SendConfig) -> Self {
+        Profile {
+            version: PROFILE_VERSION,
+            name: name.into(),
+            config,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +646,50 @@ mod tests {
             },
         };
         round_trip(&cfg);
+    }
+
+    #[test]
+    fn profile_round_trips_through_json_text() {
+        let profile = Profile::new(
+            "CAN 总线回放",
+            SendConfig {
+                pacing: PacingConfig {
+                    interval_us: 500,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+
+        let text = serde_json::to_string_pretty(&profile).unwrap();
+        let back: Profile = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, profile);
+        assert_eq!(back.version, PROFILE_VERSION);
+        assert_eq!(back.name, "CAN 总线回放");
+    }
+
+    #[test]
+    fn profile_without_optional_sections_still_loads() {
+        // 旧档案没有 filter / mutate 两节，靠 serde default 补齐
+        let text = r#"{
+            "version": 1,
+            "name": "旧档案",
+            "config": {
+                "parse": {
+                    "encoding": "utf8",
+                    "prefix": { "mode": "chars", "skipChars": 4 },
+                    "hex": { "ignoreChars": "" }
+                },
+                "target": { "mode": "unicast", "host": "10.0.0.1", "port": 8000,
+                            "bindAddr": null, "bindPort": null, "sendBufferBytes": null },
+                "pacing": { "intervalUs": 100, "startLine": 1, "endLine": 0,
+                            "repeat": false, "repeatCount": 0, "highPrecision": false }
+            }
+        }"#;
+        let p: Profile = serde_json::from_str(text).expect("旧档案必须仍然可读");
+        assert!(p.config.filter.rules.is_empty());
+        assert!(p.config.mutate.rules.is_empty());
+        assert_eq!(p.config.pacing.interval_us, 100);
     }
 
     #[test]

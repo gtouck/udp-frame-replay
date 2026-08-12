@@ -1,5 +1,7 @@
 import FilterSection from "./config/FilterSection";
 import MutateSection from "./config/MutateSection";
+import PreflightPanel from "./config/PreflightPanel";
+import ProfileSection from "./config/ProfileSection";
 import PacingSection from "./config/PacingSection";
 import ParseSection from "./config/ParseSection";
 import TargetSection from "./config/TargetSection";
@@ -8,6 +10,8 @@ import Group from "./Group";
 export default function ConfigPanel() {
   return (
     <aside className="config">
+      <PreflightPanel />
+
       <Group name="解析规则">
         <ParseSection />
       </Group>
@@ -26,6 +30,10 @@ export default function ConfigPanel() {
 
       <Group name="节奏控制">
         <PacingSection />
+      </Group>
+
+      <Group name="配置档" defaultOpen={false}>
+        <ProfileSection />
       </Group>
     </aside>
   );

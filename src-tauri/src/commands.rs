@@ -5,11 +5,12 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::State;
 
-use crate::config::{FilterConfig, ParseConfig, SendConfig};
+use crate::config::{FilterConfig, ParseConfig, Profile, SendConfig};
 use crate::engine::{Engine, EngineSnapshot, SentFrame};
 use crate::filter::CompiledFilter;
 use crate::log::{ErrorGroup, LogEntry};
 use crate::net::{list_interfaces, InterfaceInfo};
+use crate::preflight::{self, Problem};
 use crate::parse::{self, ParseErrorKind};
 use crate::source::{DataSource, FileInfo};
 use crate::state::AppState;
@@ -241,4 +242,44 @@ pub fn error_groups(state: State<'_, AppState>) -> Vec<ErrorGroup> {
 #[tauri::command]
 pub fn clear_log(state: State<'_, AppState>) {
     state.log.clear();
+}
+
+
+// ── 预检 ────────────────────────────────────────────────────
+
+/// 检查整套配置，一次返回全部问题。界面在配置变动时随时调用。
+#[tauri::command]
+pub fn preflight_check(config: SendConfig, state: State<'_, AppState>) -> Vec<Problem> {
+    let active = state
+        .engine
+        .lock()
+        .as_ref()
+        .is_some_and(|e| !e.is_finished());
+    let guard = state.source.read();
+    preflight::check(&config, guard.as_deref(), active)
+}
+
+// ── 配置档 ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn save_profile(
+    path: String,
+    name: String,
+    config: SendConfig,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let profile = Profile::new(name, config);
+    let text = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| format!("写入 {path} 失败：{e}"))?;
+    state.log.info(format!("已保存配置档 {path}"));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn load_profile(path: String, state: State<'_, AppState>) -> Result<Profile, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取 {path} 失败：{e}"))?;
+    let profile: Profile =
+        serde_json::from_str(&text).map_err(|e| format!("{path} 不是有效的配置档：{e}"))?;
+    state.log.info(format!("已载入配置档 {} · {}", profile.name, path));
+    Ok(profile)
 }

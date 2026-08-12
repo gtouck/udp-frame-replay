@@ -275,6 +275,25 @@ export interface ErrorGroup {
   sampleLines: number[];
 }
 
+// ── 预检 ────────────────────────────────────────────────────
+
+export type Severity = "error" | "warn";
+
+export interface Problem {
+  severity: Severity;
+  /** 问题出在哪一块配置 */
+  area: string;
+  message: string;
+}
+
+// ── 配置档 ──────────────────────────────────────────────────
+
+export interface Profile {
+  version: number;
+  name: string;
+  config: SendConfig;
+}
+
 // ── 命令封装 ────────────────────────────────────────────────
 
 export const openFile = (path: string) => invoke<FileInfo>("open_file", { path });
@@ -311,6 +330,15 @@ export const logEntries = (after: number, limit: number) =>
 
 export const errorGroups = () => invoke<ErrorGroup[]>("error_groups");
 export const clearLog = () => invoke<void>("clear_log");
+
+export const preflightCheck = (config: SendConfig) =>
+  invoke<Problem[]>("preflight_check", { config });
+
+export const saveProfile = (path: string, name: string, config: SendConfig) =>
+  invoke<void>("save_profile", { path, name, config });
+
+export const loadProfile = (path: string) =>
+  invoke<Profile>("load_profile", { path });
 
 // ── 默认配置 ────────────────────────────────────────────────
 

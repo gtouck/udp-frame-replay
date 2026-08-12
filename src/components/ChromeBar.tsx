@@ -8,7 +8,7 @@ import {
   stepSend,
   stopSend,
 } from "../api";
-import { isActive, useStore } from "../store";
+import { hasBlockingProblem, isActive, useStore } from "../store";
 
 /** 路径拆成目录与文件名两段：目录可以省略，文件名永远完整可见。 */
 const cut = (p: string) => Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -25,8 +25,10 @@ export default function ChromeBar() {
   const mutate = useStore((s) => s.mutate);
   const target = useStore((s) => s.target);
   const pacing = useStore((s) => s.pacing);
+  const problems = useStore((s) => s.problems);
 
   const active = isActive(engine);
+  const blocked = hasBlockingProblem(problems);
   const paused = engine?.state === "paused";
   const finished = engine?.state === "finished";
 
@@ -100,8 +102,14 @@ export default function ChromeBar() {
             className="btn"
             data-primary="true"
             onClick={start}
-            disabled={!file}
-            title={file ? undefined : "先打开一个数据文件"}
+            disabled={!file || blocked}
+            title={
+              !file
+                ? "先打开一个数据文件"
+                : blocked
+                  ? "左侧配置里还有需要修正的问题"
+                  : undefined
+            }
           >
             开始发送
           </button>

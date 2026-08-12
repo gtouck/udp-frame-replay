@@ -221,6 +221,47 @@
                 },
               ];
 
+            case "preflight_check": {
+              const c = args.config;
+              const out = [];
+              if (c.pacing.intervalUs === 0)
+                out.push({
+                  severity: "warn",
+                  area: "节奏控制",
+                  message:
+                    "间隔为 0 表示全速发送，实际速率取决于网卡和内核，很可能出现缓冲满丢帧",
+                });
+              const bad = (c.filter?.rules ?? []).some(
+                (r) =>
+                  r.enabled &&
+                  r.condition.kind === "bytes" &&
+                  /[^0-9a-fA-F\s:,-]/.test(r.condition.value),
+              );
+              if (bad)
+                out.push({
+                  severity: "error",
+                  area: "筛选规则",
+                  message: "第 1 条规则的字节值不是合法的十六进制",
+                });
+              const st2 = (c.mutate?.rules ?? []).filter(
+                (r) => r.enabled && !["insert", "replace", "delete"].includes(r.op.kind),
+              );
+              const lastCk = st2.map((r) => r.op.kind).lastIndexOf("checksum");
+              if (lastCk >= 0 && lastCk < st2.length - 1)
+                out.push({
+                  severity: "warn",
+                  area: "修改规则",
+                  message:
+                    "校验和后面还有「长度」规则。它会改动已经算过校验的字节，把校验和移到最后才对",
+                });
+              return out;
+            }
+
+            case "save_profile":
+              return null;
+            case "load_profile":
+              return { version: 1, name: "示例配置", config: args.__never };
+
             case "clear_log":
               logs.length = 0;
               return null;

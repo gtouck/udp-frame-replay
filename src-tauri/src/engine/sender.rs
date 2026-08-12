@@ -43,6 +43,31 @@ struct Warned {
     buffer_full: bool,
 }
 
+/// Windows 的默认定时器粒度是 15.6ms，`sleep` 根本到不了毫秒级。
+///
+/// `timeBeginPeriod(1)` 把粒度调到 1ms，但这是**全系统**设置，
+/// 退出时必须成对还回去 —— 否则整机功耗会一直偏高。用 RAII 保证不会漏。
+struct TimerResolution;
+
+impl TimerResolution {
+    fn acquire() -> Self {
+        #[cfg(windows)]
+        unsafe {
+            windows_sys::Win32::Media::timeBeginPeriod(1);
+        }
+        TimerResolution
+    }
+}
+
+impl Drop for TimerResolution {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        unsafe {
+            windows_sys::Win32::Media::timeEndPeriod(1);
+        }
+    }
+}
+
 fn run(shared: Arc<Shared>, udp: UdpSender, pacing: PacingConfig) {
     // 提升优先级能明显改善定时稳定性，但普通用户权限下常常失败 —— 失败不致命
     if let Err(e) = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max)
@@ -51,6 +76,9 @@ fn run(shared: Arc<Shared>, udp: UdpSender, pacing: PacingConfig) {
             "无法提升发送线程优先级（{e:?}），高负载下时序抖动会变大"
         ));
     }
+
+    // 提高系统定时器粒度，线程结束时自动还回去
+    let _timer = TimerResolution::acquire();
 
     let mut pacer = Pacer::new(pacing.interval_us, pacing.high_precision);
     pacer.arm();

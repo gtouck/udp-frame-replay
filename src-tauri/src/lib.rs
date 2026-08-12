@@ -5,6 +5,7 @@ pub mod log;
 pub mod mutate;
 pub mod net;
 pub mod parse;
+pub mod preflight;
 pub mod source;
 
 mod commands;
@@ -32,6 +33,9 @@ pub fn run() {
             commands::log_entries,
             commands::error_groups,
             commands::clear_log,
+            commands::preflight_check,
+            commands::save_profile,
+            commands::load_profile,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 应用启动失败");

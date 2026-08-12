@@ -19,6 +19,8 @@ import {
   type LogLevel,
   type PacingConfig,
   type ParseConfig,
+  type Problem,
+  type SendConfig,
   type PrefixRule,
   type SentFrame,
   type TargetConfig,
@@ -80,6 +82,12 @@ interface AppStore {
 
   logFilter: LogLevel | "all";
   setLogFilter: (f: LogLevel | "all") => void;
+
+  problems: Problem[];
+  setProblems: (p: Problem[]) => void;
+
+  /** 载入配置档时整体替换五部分配置 */
+  applyConfig: (c: SendConfig) => void;
 
   notice: string | null;
   setNotice: (m: string | null) => void;
@@ -265,9 +273,27 @@ export const useStore = create<AppStore>((set) => ({
   logFilter: "all",
   setLogFilter: (logFilter) => set({ logFilter }),
 
+  problems: [],
+  setProblems: (problems) => set({ problems }),
+
+  applyConfig: (c) =>
+    set((s) => ({
+      parse: c.parse,
+      filter: c.filter ?? { rules: [] },
+      mutate: c.mutate ?? { rules: [] },
+      target: c.target,
+      pacing: c.pacing,
+      // 解析与筛选都换了，预览缓存必须整体作废
+      previewVersion: s.previewVersion + 1,
+    })),
+
   notice: null,
   setNotice: (notice) => set({ notice }),
 }));
+
+/** 有阻止启动的问题吗 */
+export const hasBlockingProblem = (problems: Problem[]) =>
+  problems.some((p) => p.severity === "error");
 
 /** 当前是否有正在运行或暂停的任务 */
 export const isActive = (e: EngineSnapshot | null) =>
