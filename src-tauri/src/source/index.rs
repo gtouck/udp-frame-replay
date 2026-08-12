@@ -14,8 +14,8 @@ impl LineIndex {
 
         if !data.is_empty() {
             starts.push(0);
-            // 预估行数，减少扩容次数
-            starts.reserve(data.len() / 128);
+            // 按每行 256 字节预估，减少扩容次数。估多了没关系，最后会缩回去。
+            starts.reserve(data.len() / 256);
 
             let mut pos = 0usize;
             while let Some(rel) = memchr::memchr(b'\n', &data[pos..]) {
@@ -30,6 +30,10 @@ impl LineIndex {
         }
 
         starts.push(data.len() as u32); // 哨兵
+
+        // 预留是按估算来的，实际行数往往差得远。缩回实际大小 ——
+        // 1GB 文件上这一步能省下十几 MB，代价只是一次几毫秒的拷贝。
+        starts.shrink_to_fit();
         LineIndex { starts }
     }
 
@@ -103,6 +107,16 @@ mod tests {
     #[test]
     fn preserves_empty_interior_lines() {
         assert_eq!(ranges("a\n\nb\n"), vec!["a", "", "b"]);
+    }
+
+    #[test]
+    fn index_memory_matches_actual_line_count() {
+        // 容量必须贴着实际行数，而不是按文件大小估出来的那个数
+        let data = "0123456789\n".repeat(1000);
+        let idx = LineIndex::build(data.as_bytes());
+        assert_eq!(idx.line_count(), 1000);
+        // 1000 行 + 1 个哨兵，每个 4 字节
+        assert_eq!(idx.memory_bytes(), 1001 * 4);
     }
 
     #[test]
