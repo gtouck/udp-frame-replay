@@ -73,6 +73,7 @@
           parsedFrames: run.sent + 3,
           skippedLines: 3,
           filteredOut: Math.floor(run.sent * 0.4),
+          mutationIssues: 0,
           currentLine: run.sent % FILE.lineCount,
           loopsDone: 0,
           pending: 128,
@@ -139,6 +140,7 @@
                 sent: 0,
                 startedAt: Date.now(),
                 intervalUs: c.pacing.intervalUs || 78,
+                spans: (c.mutate?.rules ?? []).some((r) => r.enabled),
                 desc:
                   t.mode === "unicast"
                     ? `单播 → ${t.host}:${t.port}`
@@ -181,11 +183,20 @@
                 const idx = run.sent - n + i;
                 if (idx < 0) continue;
                 const b = bytesOf(idx);
+                // 模拟：头 2 字节是插入的，第 3 字节被替换，末 2 字节是校验和
+                const framed = [0x5a, 0xa5, ...b, 0x1d, 0x0f];
                 out.push({
                   lineNo: (idx % FILE.lineCount) + 1,
-                  len: b.length,
-                  bytes: b,
+                  len: framed.length,
+                  bytes: framed,
                   at: Date.now(),
+                  spans: run.spans
+                    ? [
+                        { start: 0, len: 2, kind: "insert" },
+                        { start: 2, len: 1, kind: "replace" },
+                        { start: framed.length - 2, len: 2, kind: "computed" },
+                      ]
+                    : [],
                 });
               }
               return out;

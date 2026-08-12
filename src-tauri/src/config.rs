@@ -169,6 +169,187 @@ pub struct FilterConfig {
     pub rules: Vec<FilterRule>,
 }
 
+// ── 修改规则 ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Endian {
+    Big,
+    Little,
+}
+
+impl Default for Endian {
+    fn default() -> Self {
+        Endian::Big
+    }
+}
+
+/// 多字节值占用的字节数
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Width {
+    W1,
+    W2,
+    W4,
+    W8,
+}
+
+impl Width {
+    pub fn bytes(self) -> usize {
+        match self {
+            Width::W1 => 1,
+            Width::W2 => 2,
+            Width::W4 => 4,
+            Width::W8 => 8,
+        }
+    }
+}
+
+impl Default for Width {
+    fn default() -> Self {
+        Width::W2
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TimeUnit {
+    Millis,
+    Micros,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TimeEpoch {
+    /// Unix 纪元起的绝对时间
+    Unix,
+    /// 本次发送开始起的相对时间
+    SinceStart,
+}
+
+/// 字节范围。起止都支持负数（从帧尾倒数）。
+///
+/// 区间是左闭右开 `[start, end)`；`end` 填 0 表示一直到帧尾 ——
+/// 「第 2 字节到倒数第 2 字节」这种校验范围太常见了，必须能直接表达。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ByteRange {
+    pub start: i64,
+    pub end: i64,
+}
+
+impl Default for ByteRange {
+    fn default() -> Self {
+        ByteRange { start: 0, end: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChecksumAlgo {
+    Sum8,
+    Sum16,
+    Xor8,
+    /// CRC-16/IBM-3740，常称 CCITT-FALSE
+    Crc16Ccitt,
+    Crc16Modbus,
+    Crc16Xmodem,
+    /// CRC-32/ISO-HDLC，zip 与以太网用的那个
+    Crc32,
+}
+
+/// 一次修改操作。
+///
+/// 前三种改变帧的结构，在阶段一执行，偏移一律基于**原始帧**；
+/// 后四种写入计算值，在阶段二执行，偏移基于**阶段一之后的帧**。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum MutationOp {
+    #[serde(rename_all = "camelCase")]
+    Insert { offset: i64, value: String },
+
+    #[serde(rename_all = "camelCase")]
+    Replace { offset: i64, value: String },
+
+    #[serde(rename_all = "camelCase")]
+    Delete { offset: i64, length: usize },
+
+    #[serde(rename_all = "camelCase")]
+    Sequence {
+        offset: i64,
+        width: Width,
+        endian: Endian,
+        start: u64,
+        step: u64,
+        /// 循环发送时是否把计数器归零
+        reset_each_loop: bool,
+    },
+
+    #[serde(rename_all = "camelCase")]
+    Timestamp {
+        offset: i64,
+        width: Width,
+        endian: Endian,
+        unit: TimeUnit,
+        epoch: TimeEpoch,
+    },
+
+    #[serde(rename_all = "camelCase")]
+    Length {
+        offset: i64,
+        width: Width,
+        endian: Endian,
+        range: ByteRange,
+        /// 长度值是否把长度字段自身的字节也算进去
+        include_self: bool,
+    },
+
+    #[serde(rename_all = "camelCase")]
+    Checksum {
+        offset: i64,
+        algorithm: ChecksumAlgo,
+        endian: Endian,
+        range: ByteRange,
+    },
+}
+
+impl MutationOp {
+    /// 是否属于阶段一（改变帧结构）
+    pub fn is_structural(&self) -> bool {
+        matches!(
+            self,
+            MutationOp::Insert { .. } | MutationOp::Replace { .. } | MutationOp::Delete { .. }
+        )
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            MutationOp::Insert { .. } => "插入",
+            MutationOp::Replace { .. } => "替换",
+            MutationOp::Delete { .. } => "删除",
+            MutationOp::Sequence { .. } => "序号",
+            MutationOp::Timestamp { .. } => "时间戳",
+            MutationOp::Length { .. } => "长度",
+            MutationOp::Checksum { .. } => "校验和",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutationRule {
+    pub op: MutationOp,
+    /// 仅当条件成立时才对该帧生效。留空表示对每一帧都生效。
+    pub condition: Option<Condition>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MutationConfig {
+    pub rules: Vec<MutationRule>,
+}
+
 // ── 发送目标 ────────────────────────────────────────────────
 
 /// 发送方式
@@ -251,6 +432,8 @@ pub struct SendConfig {
     pub parse: ParseConfig,
     #[serde(default)]
     pub filter: FilterConfig,
+    #[serde(default)]
+    pub mutate: MutationConfig,
     pub target: TargetConfig,
     pub pacing: PacingConfig,
 }
@@ -368,6 +551,32 @@ mod tests {
                 hex: HexRule {
                     ignore_chars: ":-,".into(),
                 },
+            },
+            mutate: MutationConfig {
+                rules: vec![
+                    MutationRule {
+                        op: MutationOp::Insert {
+                            offset: 0,
+                            value: "5A A5".into(),
+                        },
+                        condition: None,
+                        enabled: true,
+                    },
+                    MutationRule {
+                        op: MutationOp::Checksum {
+                            offset: -2,
+                            algorithm: ChecksumAlgo::Crc16Ccitt,
+                            endian: Endian::Little,
+                            range: ByteRange { start: 2, end: -2 },
+                        },
+                        condition: Some(Condition::Field {
+                            index: 0,
+                            op: TextOp::Equals,
+                            value: "[TX]".into(),
+                        }),
+                        enabled: true,
+                    },
+                ],
             },
             filter: FilterConfig {
                 rules: vec![

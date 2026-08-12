@@ -21,6 +21,7 @@ use thiserror::Error;
 use crate::config::SendConfig;
 use crate::filter::{CompiledFilter, FilterError};
 use crate::log::LogSink;
+use crate::mutate::{CompiledMutations, MutateError, Span, SpanSet};
 use crate::net::{NetError, UdpSender};
 use crate::source::DataSource;
 use ring::Ring;
@@ -73,6 +74,9 @@ pub enum EngineError {
 
     #[error("筛选规则有误：{0}")]
     Filter(#[from] FilterError),
+
+    #[error("修改规则有误：{0}")]
+    Mutate(#[from] MutateError),
 }
 
 #[derive(Default)]
@@ -90,6 +94,8 @@ pub struct Stats {
     pub skipped_lines: AtomicU64,
     /// 解析成功但被筛选规则排除的行数
     pub filtered_out: AtomicU64,
+    /// 修改规则在执行期遇到的问题次数（偏移越界、负偏移导致的区间冲突）
+    pub mutation_issues: AtomicU64,
     /// 解析线程当前读到的行号，1-based
     pub current_line: AtomicU64,
     pub loops_done: AtomicU64,
@@ -105,6 +111,8 @@ pub struct SentFrame {
     /// 帧内容，超长时截断
     pub bytes: Vec<u8>,
     pub at: u64,
+    /// 被修改规则改动过的字节区段
+    pub spans: Vec<Span>,
 }
 
 #[derive(Default)]
@@ -168,7 +176,14 @@ impl Shared {
     /// 快照用 `try_lock`：界面正在读的时候直接跳过这一帧，
     /// 绝不让发送线程为了记录而阻塞。反正高频下界面本来就是采样显示。
     /// `interval_us` 为 `None` 表示单步发送 —— 那种间隔不代表节拍能力，不计入抖动统计。
-    pub fn record_sent(&self, line_no: u32, data: &[u8], at: u64, interval_us: Option<u64>) {
+    pub fn record_sent(
+        &self,
+        line_no: u32,
+        data: &[u8],
+        spans: &SpanSet,
+        at: u64,
+        interval_us: Option<u64>,
+    ) {
         self.stats.sent_frames.fetch_add(1, Ordering::Relaxed);
         self.stats
             .sent_bytes
@@ -184,6 +199,7 @@ impl Shared {
                 len: data.len() as u32,
                 bytes: data[..n].to_vec(),
                 at,
+                spans: spans.as_slice().to_vec(),
             });
         }
 
@@ -209,6 +225,7 @@ pub struct EngineSnapshot {
     pub parsed_frames: u64,
     pub skipped_lines: u64,
     pub filtered_out: u64,
+    pub mutation_issues: u64,
     pub current_line: u64,
     pub loops_done: u64,
     pub pending: usize,
@@ -254,6 +271,7 @@ impl Engine {
         // 规则在这里编译一次：十六进制转字节、掩码长度校验都在启动时做完，
         // 之后每帧的判定只剩比较。配置有误也在这一刻就报出来，而不是发到一半才炸。
         let filter = CompiledFilter::compile(&cfg.filter, &cfg.parse.prefix)?;
+        let mutations = CompiledMutations::compile(&cfg.mutate, &cfg.parse.prefix)?;
 
         let udp = UdpSender::build(&cfg.target)?;
         let target_desc = udp.description.clone();
@@ -291,6 +309,7 @@ impl Engine {
             source,
             cfg.clone(),
             filter,
+            mutations,
             start,
             end,
         ));
@@ -361,6 +380,7 @@ impl Engine {
             parsed_frames: s.parsed_frames.load(Ordering::Relaxed),
             skipped_lines: s.skipped_lines.load(Ordering::Relaxed),
             filtered_out: s.filtered_out.load(Ordering::Relaxed),
+            mutation_issues: s.mutation_issues.load(Ordering::Relaxed),
             current_line: s.current_line.load(Ordering::Relaxed),
             loops_done: s.loops_done.load(Ordering::Relaxed),
             pending: self.shared.ring.pending(),

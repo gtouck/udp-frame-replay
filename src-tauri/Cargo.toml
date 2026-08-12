@@ -41,3 +41,5 @@ strip = true
 
 [dev-dependencies]
 encoding_rs = "0.8"
+
+crc = "3"

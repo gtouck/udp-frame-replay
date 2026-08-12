@@ -5,4 +5,6 @@
 
 pub mod condition;
 
-pub use condition::{CompiledFilter, FilterError};
+pub use condition::{
+    parse_hex, resolve_offset, CompiledCondition, CompiledFilter, FieldSplit, FilterError,
+};

@@ -2,6 +2,7 @@ pub mod config;
 pub mod engine;
 pub mod filter;
 pub mod log;
+pub mod mutate;
 pub mod net;
 pub mod parse;
 pub mod source;

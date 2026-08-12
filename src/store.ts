@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import {
   defaultFilterConfig,
+  defaultMutationConfig,
+  newMutationOp,
   defaultPacingConfig,
   defaultParseConfig,
   defaultTargetConfig,
@@ -10,6 +12,9 @@ import {
   type FileInfo,
   type FilterConfig,
   type FilterRule,
+  type MutationConfig,
+  type MutationOp,
+  type MutationRule,
   type LogEntry,
   type LogLevel,
   type PacingConfig,
@@ -25,6 +30,7 @@ interface AppStore {
 
   parse: ParseConfig;
   filter: FilterConfig;
+  mutate: MutationConfig;
 
   /**
    * 预览版本号。解析规则或筛选规则一改就自增，用来作废预览缓存 ——
@@ -41,6 +47,12 @@ interface AppStore {
   updateFilterRule: (i: number, patch: Partial<FilterRule>) => void;
   updateFilterCondition: (i: number, patch: Partial<Condition>) => void;
   removeFilterRule: (i: number) => void;
+
+  addMutationRule: (kind: MutationOp["kind"]) => void;
+  updateMutationRule: (i: number, patch: Partial<MutationRule>) => void;
+  updateMutationOp: (i: number, patch: Record<string, unknown>) => void;
+  moveMutationRule: (i: number, delta: number) => void;
+  removeMutationRule: (i: number) => void;
 
   target: TargetConfig;
   setTarget: (patch: Partial<TargetConfig>) => void;
@@ -84,6 +96,7 @@ export const useStore = create<AppStore>((set) => ({
 
   parse: defaultParseConfig(),
   filter: defaultFilterConfig(),
+  mutate: defaultMutationConfig(),
   previewVersion: 0,
 
   setParse: (patch) =>
@@ -164,6 +177,45 @@ export const useStore = create<AppStore>((set) => ({
       filter: { rules: s.filter.rules.filter((_, j) => j !== i) },
       previewVersion: s.previewVersion + 1,
     })),
+
+  addMutationRule: (kind) =>
+    set((s) => ({
+      mutate: {
+        rules: [
+          ...s.mutate.rules,
+          { op: newMutationOp(kind), condition: null, enabled: true },
+        ],
+      },
+    })),
+
+  updateMutationRule: (i, patch) =>
+    set((s) => ({
+      mutate: {
+        rules: s.mutate.rules.map((r, j) => (i === j ? { ...r, ...patch } : r)),
+      },
+    })),
+
+  updateMutationOp: (i, patch) =>
+    set((s) => ({
+      mutate: {
+        rules: s.mutate.rules.map((r, j) =>
+          i === j ? ({ ...r, op: { ...r.op, ...patch } } as MutationRule) : r,
+        ),
+      },
+    })),
+
+  /** 顺序有意义：阶段二严格按这个顺序执行，校验和必须排在最后 */
+  moveMutationRule: (i, delta) =>
+    set((s) => {
+      const j = i + delta;
+      if (j < 0 || j >= s.mutate.rules.length) return s;
+      const rules = [...s.mutate.rules];
+      [rules[i], rules[j]] = [rules[j], rules[i]];
+      return { mutate: { rules } };
+    }),
+
+  removeMutationRule: (i) =>
+    set((s) => ({ mutate: { rules: s.mutate.rules.filter((_, j) => j !== i) } })),
 
   target: defaultTargetConfig(),
   setTarget: (patch) =>

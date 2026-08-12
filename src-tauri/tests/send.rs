@@ -10,8 +10,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use data_perf_lib::config::{
-    Condition, Delimiter, FilterConfig, FilterRule, PacingConfig, ParseConfig, PrefixRule,
-    SendConfig, TargetConfig, TargetKind, TextEncoding, TextOp,
+    ByteRange, ChecksumAlgo, Condition, Delimiter, Endian, FilterConfig, FilterRule,
+    MutationConfig, MutationOp, MutationRule, PacingConfig, ParseConfig, PrefixRule, SendConfig,
+    TargetConfig, TargetKind, TextEncoding, TextOp, Width,
 };
 use data_perf_lib::engine::Engine;
 use data_perf_lib::log::LogSink;
@@ -53,6 +54,7 @@ fn cfg(port: u16) -> SendConfig {
             hex: Default::default(),
         },
         filter: Default::default(),
+        mutate: Default::default(),
         target: TargetConfig {
             kind: TargetKind::Unicast {
                 host: "127.0.0.1".into(),
@@ -489,4 +491,244 @@ fn invalid_filter_is_rejected_before_starting() {
     let err = Engine::start(src, c, Arc::new(LogSink::default())).unwrap_err();
     assert!(err.to_string().contains("筛选规则有误"), "实际：{err}");
     let _ = std::fs::remove_file(&path);
+}
+
+// ── 修改规则 ────────────────────────────────────────────────
+
+const PAYLOAD: &str = "\
+[TX] 000001 发送 AA BB CC DD 00 00
+[TX] 000002 发送 11 22 33 44 00 00
+";
+
+fn mutations(ops: Vec<MutationOp>) -> MutationConfig {
+    MutationConfig {
+        rules: ops
+            .into_iter()
+            .map(|op| MutationRule {
+                op,
+                condition: None,
+                enabled: true,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn inserted_bytes_reach_the_wire() {
+    let (frames, _) = run(PAYLOAD, |c| {
+        c.mutate = mutations(vec![MutationOp::Insert {
+            offset: 0,
+            value: "5A A5".into(),
+        }]);
+    });
+
+    assert_eq!(frames.len(), 2);
+    assert_eq!(
+        frames[0],
+        vec![0x5A, 0xA5, 0xAA, 0xBB, 0xCC, 0xDD, 0x00, 0x00]
+    );
+}
+
+#[test]
+fn deleted_bytes_are_absent_from_the_wire() {
+    let (frames, _) = run(PAYLOAD, |c| {
+        c.mutate = mutations(vec![MutationOp::Delete {
+            offset: 1,
+            length: 2,
+        }]);
+    });
+
+    assert_eq!(frames[0], vec![0xAA, 0xDD, 0x00, 0x00]);
+}
+
+/// 这条测试守的是整个修改引擎的承诺：改完的帧依然是合法报文。
+#[test]
+fn length_and_checksum_are_correct_after_an_insertion_end_to_end() {
+    let (frames, _) = run(PAYLOAD, |c| {
+        c.mutate = mutations(vec![
+            // 阶段一：插入 2 字节帧头
+            MutationOp::Insert {
+                offset: 0,
+                value: "5A A5".into(),
+            },
+            // 阶段二：长度写在头之后，统计负载区
+            MutationOp::Length {
+                offset: 2,
+                width: Width::W1,
+                endian: Endian::Big,
+                range: ByteRange { start: 3, end: -2 },
+                include_self: false,
+            },
+            // 校验和最后算，覆盖除自身外的全部
+            MutationOp::Checksum {
+                offset: -2,
+                algorithm: ChecksumAlgo::Crc16Ccitt,
+                endian: Endian::Big,
+                range: ByteRange { start: 0, end: -2 },
+            },
+        ]);
+    });
+
+    assert_eq!(frames.len(), 2);
+    let f = &frames[0];
+
+    // 2 字节头 + 原 6 字节
+    assert_eq!(f.len(), 8);
+    assert_eq!(&f[0..2], &[0x5A, 0xA5]);
+
+    // 长度字段：[3, 6) 共 3 字节
+    assert_eq!(f[2], 3);
+
+    // 接收端自己按同样规则复核校验和 —— 这才是真正的验证
+    let crc = crc::Crc::<u16>::new(&crc::CRC_16_IBM_3740).checksum(&f[0..6]);
+    assert_eq!(
+        &f[6..8],
+        &crc.to_be_bytes(),
+        "收到的帧校验和必须与其自身内容相符"
+    );
+}
+
+#[test]
+fn sequence_number_increments_across_sent_frames() {
+    let (frames, _) = run(PAYLOAD, |c| {
+        c.pacing.repeat = true;
+        c.pacing.repeat_count = 2;
+        c.mutate = mutations(vec![MutationOp::Sequence {
+            offset: 4,
+            width: Width::W2,
+            endian: Endian::Big,
+            start: 1000,
+            step: 1,
+            reset_each_loop: false,
+        }]);
+    });
+
+    assert_eq!(frames.len(), 4, "两行循环两轮");
+    let seq: Vec<u16> = frames
+        .iter()
+        .map(|f| u16::from_be_bytes([f[4], f[5]]))
+        .collect();
+    assert_eq!(seq, vec![1000, 1001, 1002, 1003]);
+}
+
+#[test]
+fn sequence_resets_each_loop_when_configured() {
+    let (frames, _) = run(PAYLOAD, |c| {
+        c.pacing.repeat = true;
+        c.pacing.repeat_count = 2;
+        c.mutate = mutations(vec![MutationOp::Sequence {
+            offset: 4,
+            width: Width::W2,
+            endian: Endian::Big,
+            start: 1,
+            step: 1,
+            reset_each_loop: true,
+        }]);
+    });
+
+    assert_eq!(frames.len(), 4);
+    let seq: Vec<u16> = frames
+        .iter()
+        .map(|f| u16::from_be_bytes([f[4], f[5]]))
+        .collect();
+    assert_eq!(seq, vec![1, 2, 1, 2], "每轮循环重新从 1 开始");
+}
+
+#[test]
+fn conditional_mutation_only_touches_matching_frames() {
+    let content = "\
+[TX] 000001 发送 AA BB
+[RX] 000002 接收 CC DD
+";
+    let (frames, _) = run(content, |c| {
+        c.mutate = MutationConfig {
+            rules: vec![MutationRule {
+                op: MutationOp::Replace {
+                    offset: 0,
+                    value: "FF".into(),
+                },
+                condition: Some(Condition::Field {
+                    index: 0,
+                    op: TextOp::Equals,
+                    value: "[TX]".into(),
+                }),
+                enabled: true,
+            }],
+        };
+    });
+
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0], vec![0xFF, 0xBB], "[TX] 行被改");
+    assert_eq!(frames[1], vec![0xCC, 0xDD], "[RX] 行原样发出");
+}
+
+#[test]
+fn overlapping_rules_are_rejected_before_starting() {
+    let path = temp_file(PAYLOAD);
+    let src = Arc::new(DataSource::open(&path).unwrap());
+
+    let mut c = cfg(19996);
+    c.mutate = mutations(vec![
+        MutationOp::Replace {
+            offset: 0,
+            value: "01 02 03".into(),
+        },
+        MutationOp::Delete {
+            offset: 2,
+            length: 2,
+        },
+    ]);
+
+    let err = Engine::start(src, c, Arc::new(LogSink::default())).unwrap_err();
+    assert!(err.to_string().contains("同一段字节"), "实际：{err}");
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn out_of_range_mutation_is_counted_but_frame_still_sends() {
+    let path = temp_file(PAYLOAD);
+    let (sock, port) = receiver();
+
+    let mut c = cfg(port);
+    c.mutate = mutations(vec![MutationOp::Replace {
+        offset: 99,
+        value: "FF".into(),
+    }]);
+
+    let src = Arc::new(DataSource::open(&path).unwrap());
+    let engine = Engine::start(src, c, Arc::new(LogSink::default())).unwrap();
+    let frames = collect(&sock, 2, Duration::from_millis(800));
+    std::thread::sleep(Duration::from_millis(50));
+    let snap = engine.snapshot();
+    engine.shutdown();
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(frames.len(), 2, "越界的规则不该拦住整帧");
+    assert_eq!(frames[0], vec![0xAA, 0xBB, 0xCC, 0xDD, 0x00, 0x00]);
+    assert_eq!(snap.mutation_issues, 2, "每帧各记一次");
+}
+
+#[test]
+fn filter_sees_original_bytes_not_mutated_ones() {
+    // 筛选看原始数据，修改在其后 —— 否则规则的含义会变得难以预料
+    let (frames, _) = run(PAYLOAD, |c| {
+        c.filter = FilterConfig {
+            rules: vec![FilterRule {
+                condition: Condition::Bytes {
+                    offset: 0,
+                    value: "AA".into(),
+                    mask: None,
+                },
+                negate: false,
+                enabled: true,
+            }],
+        };
+        c.mutate = mutations(vec![MutationOp::Replace {
+            offset: 0,
+            value: "FF".into(),
+        }]);
+    });
+
+    assert_eq!(frames.len(), 1, "只有首字节原本是 AA 的那一行通过筛选");
+    assert_eq!(frames[0][0], 0xFF, "通过之后才被改成 FF");
 }

@@ -12,6 +12,7 @@ use std::time::Duration;
 use crate::config::SendConfig;
 use crate::engine::{Shared, S_FINISHED};
 use crate::filter::CompiledFilter;
+use crate::mutate::{CompiledMutations, Mutator};
 use crate::net::udp::MAX_UDP_PAYLOAD;
 use crate::parse::parse_line;
 use crate::source::DataSource;
@@ -25,12 +26,13 @@ pub fn spawn(
     source: Arc<DataSource>,
     cfg: SendConfig,
     filter: CompiledFilter,
+    mutations: CompiledMutations,
     start_line: u64,
     end_line: u64,
 ) -> JoinHandle<()> {
     thread::Builder::new()
         .name("frame-parser".into())
-        .spawn(move || run(shared, source, cfg, filter, start_line, end_line))
+        .spawn(move || run(shared, source, cfg, filter, mutations, start_line, end_line))
         .expect("创建解析线程失败")
 }
 
@@ -39,10 +41,15 @@ fn run(
     source: Arc<DataSource>,
     cfg: SendConfig,
     filter: CompiledFilter,
+    mutations: CompiledMutations,
     start_line: u64,
     end_line: u64,
 ) {
     let enc = cfg.parse.encoding;
+    let mut mutator = Mutator::new(mutations);
+    // 修改后的帧写进这个缓冲，再和槽位交换 —— 交换只动指针，不拷贝字节
+    let mut mutated: Vec<u8> = Vec::with_capacity(2048);
+    let mut spans = crate::mutate::SpanSet::default();
     // 行号在内部一律用 0-based，配置里的 start/end 是 1-based 且含端点
     let first = start_line - 1;
     let last_exclusive = end_line;
@@ -50,6 +57,7 @@ fn run(
     let mut line = first;
     let mut loops_done = 0u32;
     let mut oversize_logged = false;
+    let mut mutation_issue_logged = false;
 
     'outer: loop {
         if shared.stopping() {
@@ -127,6 +135,35 @@ fn run(
             shared.ring.recycle(frame);
             line += 1;
             continue;
+        }
+
+        // 修改规则放在筛选之后：筛选看的是原始数据，改完再筛会让规则的含义变得难以预料
+        if !mutator.is_empty() {
+            let stats = mutator.apply(&text, &frame.data, &mut mutated, &mut spans, loops_done);
+            std::mem::swap(&mut frame.data, &mut mutated);
+            frame.spans = spans;
+
+            if !stats.is_clean() {
+                let n = (stats.out_of_range + stats.overlaps) as u64;
+                shared.stats.mutation_issues.fetch_add(n, Ordering::Relaxed);
+                if !mutation_issue_logged {
+                    mutation_issue_logged = true;
+                    shared.log.warn(format!(
+                        "第 {} 行有修改规则未能生效：偏移越界 {} 次、区间冲突 {} 次（后续同类不再单独记录）",
+                        line + 1,
+                        stats.out_of_range,
+                        stats.overlaps
+                    ));
+                }
+            }
+
+            // 改完可能超出 UDP 单包上限
+            if frame.data.len() > MAX_UDP_PAYLOAD {
+                shared.stats.oversize.fetch_add(1, Ordering::Relaxed);
+                shared.ring.recycle(frame);
+                line += 1;
+                continue;
+            }
         }
 
         frame.line_no = (line + 1) as u32;

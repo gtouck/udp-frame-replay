@@ -6,6 +6,8 @@
 
 use crossbeam_queue::ArrayQueue;
 
+use crate::mutate::SpanSet;
+
 /// 单槽预留字节数。绝大多数帧远小于此，超出的帧会让该槽的 Vec 自行增长。
 pub const DEFAULT_SLOT_BYTES: usize = 2048;
 
@@ -17,6 +19,8 @@ pub struct Frame {
     pub data: Vec<u8>,
     /// 来源行号，1-based，用于界面对照与日志定位
     pub line_no: u32,
+    /// 被修改规则改动过的字节区段，供发送视图着色。定长数组，不额外分配。
+    pub spans: SpanSet,
 }
 
 pub struct Ring {
@@ -32,6 +36,7 @@ impl Ring {
             let _ = free.push(Frame {
                 data: Vec::with_capacity(slot_bytes),
                 line_no: 0,
+                spans: SpanSet::default(),
             });
         }
         Ring {
@@ -59,6 +64,7 @@ impl Ring {
     pub fn recycle(&self, mut frame: Frame) {
         frame.data.clear();
         frame.line_no = 0;
+        frame.spans.clear();
         let _ = self.free.push(frame);
     }
 

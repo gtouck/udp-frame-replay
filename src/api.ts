@@ -76,6 +76,103 @@ export interface FilterConfig {
   rules: FilterRule[];
 }
 
+// ── 修改规则 ────────────────────────────────────────────────
+
+export type Endian = "big" | "little";
+export type Width = "w1" | "w2" | "w4" | "w8";
+export type TimeUnit = "millis" | "micros";
+export type TimeEpoch = "unix" | "sinceStart";
+
+export type ChecksumAlgo =
+  | "sum8"
+  | "sum16"
+  | "xor8"
+  | "crc16Ccitt"
+  | "crc16Modbus"
+  | "crc16Xmodem"
+  | "crc32";
+
+/** 左闭右开 [start, end)，起止都可为负（从帧尾倒数）；end 填 0 表示到帧尾。 */
+export interface ByteRange {
+  start: number;
+  end: number;
+}
+
+export type MutationOp =
+  | { kind: "insert"; offset: number; value: string }
+  | { kind: "replace"; offset: number; value: string }
+  | { kind: "delete"; offset: number; length: number }
+  | {
+      kind: "sequence";
+      offset: number;
+      width: Width;
+      endian: Endian;
+      start: number;
+      step: number;
+      resetEachLoop: boolean;
+    }
+  | {
+      kind: "timestamp";
+      offset: number;
+      width: Width;
+      endian: Endian;
+      unit: TimeUnit;
+      epoch: TimeEpoch;
+    }
+  | {
+      kind: "length";
+      offset: number;
+      width: Width;
+      endian: Endian;
+      range: ByteRange;
+      includeSelf: boolean;
+    }
+  | {
+      kind: "checksum";
+      offset: number;
+      algorithm: ChecksumAlgo;
+      endian: Endian;
+      range: ByteRange;
+    };
+
+export interface MutationRule {
+  op: MutationOp;
+  /** 留空表示对每一帧都生效 */
+  condition: Condition | null;
+  enabled: boolean;
+}
+
+export interface MutationConfig {
+  rules: MutationRule[];
+}
+
+/** 前三种改结构（阶段一），后四种写计算值（阶段二） */
+export const STRUCTURAL_KINDS: MutationOp["kind"][] = [
+  "insert",
+  "replace",
+  "delete",
+];
+
+export const isStructural = (k: MutationOp["kind"]) =>
+  STRUCTURAL_KINDS.includes(k);
+
+export const OP_LABEL: Record<MutationOp["kind"], string> = {
+  insert: "插入",
+  replace: "替换",
+  delete: "删除",
+  sequence: "序号",
+  timestamp: "时间戳",
+  length: "长度",
+  checksum: "校验和",
+};
+
+/** 一段被改动过的字节，位置是改完之后的帧内偏移 */
+export interface Span {
+  start: number;
+  len: number;
+  kind: "insert" | "replace" | "computed";
+}
+
 // ── 发送目标 ────────────────────────────────────────────────
 
 /** 后端把 kind 用 serde flatten 摊平了，所以 mode/host/port 与 bindPort 平级。 */
@@ -109,6 +206,7 @@ export interface PacingConfig {
 export interface SendConfig {
   parse: ParseConfig;
   filter: FilterConfig;
+  mutate: MutationConfig;
   target: TargetConfig;
   pacing: PacingConfig;
 }
@@ -141,6 +239,8 @@ export interface EngineSnapshot {
   skippedLines: number;
   /** 解析成功但被筛选规则排除的行数 */
   filteredOut: number;
+  /** 修改规则在执行期遇到的问题次数（偏移越界、区间冲突） */
+  mutationIssues: number;
   currentLine: number;
   loopsDone: number;
   pending: number;
@@ -156,6 +256,7 @@ export interface SentFrame {
   len: number;
   bytes: number[];
   at: number;
+  spans: Span[];
 }
 
 export type LogLevel = "info" | "warn" | "error";
@@ -225,6 +326,56 @@ export const defaultParseConfig = (): ParseConfig => ({
 });
 
 export const defaultFilterConfig = (): FilterConfig => ({ rules: [] });
+
+export const defaultMutationConfig = (): MutationConfig => ({ rules: [] });
+
+/** 新增一条修改规则时的初始形态 */
+export function newMutationOp(kind: MutationOp["kind"]): MutationOp {
+  switch (kind) {
+    case "insert":
+      return { kind, offset: 0, value: "" };
+    case "replace":
+      return { kind, offset: 0, value: "" };
+    case "delete":
+      return { kind, offset: 0, length: 1 };
+    case "sequence":
+      return {
+        kind,
+        offset: 0,
+        width: "w2",
+        endian: "big",
+        start: 0,
+        step: 1,
+        resetEachLoop: false,
+      };
+    case "timestamp":
+      return {
+        kind,
+        offset: 0,
+        width: "w4",
+        endian: "big",
+        unit: "millis",
+        epoch: "unix",
+      };
+    case "length":
+      return {
+        kind,
+        offset: 0,
+        width: "w2",
+        endian: "big",
+        range: { start: 0, end: 0 },
+        includeSelf: false,
+      };
+    case "checksum":
+      return {
+        kind,
+        offset: -2,
+        algorithm: "crc16Ccitt",
+        endian: "big",
+        range: { start: 0, end: -2 },
+      };
+  }
+}
 
 export const defaultTargetConfig = (): TargetConfig => ({
   mode: "unicast",

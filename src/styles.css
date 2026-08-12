@@ -423,6 +423,95 @@ body {
   flex: 1;
 }
 
+.rule-add-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+/* 修改规则的字段多，允许折行 */
+.rule-body-wrap {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+/* 带小标签的紧凑控件 */
+.mini {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mini-grow {
+  flex: 1;
+  min-width: 76px;
+}
+.mini-grow .input {
+  width: 100%;
+}
+
+.mini-label {
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+
+.check-inline {
+  font-size: 11px;
+  align-self: flex-end;
+  padding-bottom: 5px;
+}
+
+/* 阶段标记：一眼看出这条规则什么时候执行 */
+.stage-tag {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 2px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--seam);
+  color: var(--ink-faint);
+}
+.stage-tag[data-stage="1"] {
+  color: var(--sig-insert);
+  border-color: #23453a;
+}
+.stage-tag[data-stage="2"] {
+  color: var(--sig-compute);
+  border-color: #24354d;
+}
+
+.rule-move {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  padding: 3px 3px;
+  cursor: pointer;
+}
+.rule-move:hover:not(:disabled) {
+  color: var(--ink);
+}
+.rule-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.warn-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--r);
+  border: 1px solid #3d3520;
+  background: rgba(232, 181, 74, 0.07);
+  color: var(--sig-replace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 /* ── 屏幕区 ───────────────────────────────────────────────── */
 .screens {
   grid-area: screens;
@@ -729,6 +818,48 @@ body {
 .dump-hex {
   color: var(--ink-bright);
   flex: none;
+}
+
+/* 改动过的字节按来源上色。四个信号色各只表示一件事，这里用其中三个。 */
+.dump-hex [data-mark="insert"] {
+  color: var(--sig-insert);
+}
+.dump-hex [data-mark="replace"] {
+  color: var(--sig-replace);
+}
+.dump-hex [data-mark="computed"] {
+  color: var(--sig-compute);
+}
+
+.legend {
+  display: flex;
+  gap: 10px;
+  margin-left: 6px;
+}
+
+.legend-item {
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.legend-item::before {
+  content: "";
+  width: 7px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.legend-item[data-mark="insert"] {
+  color: var(--sig-insert);
+}
+.legend-item[data-mark="replace"] {
+  color: var(--sig-replace);
+}
+.legend-item[data-mark="computed"] {
+  color: var(--sig-compute);
 }
 
 .dump-ascii {

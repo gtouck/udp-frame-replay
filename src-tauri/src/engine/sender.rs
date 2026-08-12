@@ -137,7 +137,7 @@ fn deliver(
 ) {
     match udp.send(&frame.data, SEND_RETRIES) {
         Ok(_) => {
-            shared.record_sent(frame.line_no, &frame.data, now_ms(), interval_us);
+            shared.record_sent(frame.line_no, &frame.data, &frame.spans, now_ms(), interval_us);
         }
 
         Err(SendFail::BufferFull) => {

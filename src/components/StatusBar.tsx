@@ -100,6 +100,15 @@ export default function StatusBar() {
               title="解析没问题，但不满足筛选规则，没有发出"
             />
           )}
+          {engine.mutationIssues > 0 && (
+            <Readout
+              label="修改未生效"
+              value={formatCount(engine.mutationIssues)}
+              width={8}
+              alert
+              title="偏移越界或区间冲突，该条规则被跳过；帧本身照常发出"
+            />
+          )}
           {engine.oversize > 0 && (
             <Readout
               label="超长"

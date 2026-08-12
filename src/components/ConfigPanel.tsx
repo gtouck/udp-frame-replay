@@ -1,4 +1,5 @@
 import FilterSection from "./config/FilterSection";
+import MutateSection from "./config/MutateSection";
 import PacingSection from "./config/PacingSection";
 import ParseSection from "./config/ParseSection";
 import TargetSection from "./config/TargetSection";
@@ -13,6 +14,10 @@ export default function ConfigPanel() {
 
       <Group name="筛选规则">
         <FilterSection />
+      </Group>
+
+      <Group name="修改规则" defaultOpen={false}>
+        <MutateSection />
       </Group>
 
       <Group name="发送目标">
