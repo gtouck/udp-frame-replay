@@ -72,6 +72,7 @@
           oversize: 0,
           parsedFrames: run.sent + 3,
           skippedLines: 3,
+          filteredOut: Math.floor(run.sent * 0.4),
           currentLine: run.sent % FILE.lineCount,
           loopsDone: 0,
           pending: 128,
@@ -100,7 +101,9 @@
               return null;
 
             case "preview": {
-              const { start, count } = args;
+              const { start, count, filter } = args;
+              // 桩件里粗略模拟筛选：有启用规则时，[RX] 行算作被排除
+              const filtering = (filter?.rules ?? []).some((r) => r.enabled);
               const rows = [];
               for (let i = 0; i < count && start + i < FILE.lineCount; i++) {
                 const lineNo = start + i + 1;
@@ -113,6 +116,7 @@
                   trailing: s.t,
                   byteLen: err ? 0 : s.d.split(" ").length,
                   truncated: false,
+                  filtered: filtering && !err && s.p.startsWith("[RX]"),
                   error: err ? err[0] : null,
                   errorMsg: err ? err[1] : null,
                 });

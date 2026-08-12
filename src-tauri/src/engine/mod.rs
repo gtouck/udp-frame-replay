@@ -19,6 +19,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::config::SendConfig;
+use crate::filter::{CompiledFilter, FilterError};
 use crate::log::LogSink;
 use crate::net::{NetError, UdpSender};
 use crate::source::DataSource;
@@ -69,6 +70,9 @@ pub enum EngineError {
 
     #[error("文件在打开后被修改，请重新打开")]
     FileChanged,
+
+    #[error("筛选规则有误：{0}")]
+    Filter(#[from] FilterError),
 }
 
 #[derive(Default)]
@@ -84,6 +88,8 @@ pub struct Stats {
     pub oversize: AtomicU64,
     pub parsed_frames: AtomicU64,
     pub skipped_lines: AtomicU64,
+    /// 解析成功但被筛选规则排除的行数
+    pub filtered_out: AtomicU64,
     /// 解析线程当前读到的行号，1-based
     pub current_line: AtomicU64,
     pub loops_done: AtomicU64,
@@ -202,6 +208,7 @@ pub struct EngineSnapshot {
     pub oversize: u64,
     pub parsed_frames: u64,
     pub skipped_lines: u64,
+    pub filtered_out: u64,
     pub current_line: u64,
     pub loops_done: u64,
     pub pending: usize,
@@ -244,6 +251,10 @@ impl Engine {
             return Err(EngineError::BadRange { start, end });
         }
 
+        // 规则在这里编译一次：十六进制转字节、掩码长度校验都在启动时做完，
+        // 之后每帧的判定只剩比较。配置有误也在这一刻就报出来，而不是发到一半才炸。
+        let filter = CompiledFilter::compile(&cfg.filter, &cfg.parse.prefix)?;
+
         let udp = UdpSender::build(&cfg.target)?;
         let target_desc = udp.description.clone();
 
@@ -275,7 +286,14 @@ impl Engine {
         });
 
         let mut threads = Vec::with_capacity(2);
-        threads.push(pipeline::spawn(shared.clone(), source, cfg.clone(), start, end));
+        threads.push(pipeline::spawn(
+            shared.clone(),
+            source,
+            cfg.clone(),
+            filter,
+            start,
+            end,
+        ));
         threads.push(sender::spawn(shared.clone(), udp, cfg.pacing.clone()));
 
         Ok(Engine { shared, threads })
@@ -342,6 +360,7 @@ impl Engine {
             oversize: s.oversize.load(Ordering::Relaxed),
             parsed_frames: s.parsed_frames.load(Ordering::Relaxed),
             skipped_lines: s.skipped_lines.load(Ordering::Relaxed),
+            filtered_out: s.filtered_out.load(Ordering::Relaxed),
             current_line: s.current_line.load(Ordering::Relaxed),
             loops_done: s.loops_done.load(Ordering::Relaxed),
             pending: self.shared.ring.pending(),

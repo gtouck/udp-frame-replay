@@ -21,6 +21,7 @@ export default function ChromeBar() {
   const setNotice = useStore((s) => s.setNotice);
   const engine = useStore((s) => s.engine);
   const parse = useStore((s) => s.parse);
+  const filter = useStore((s) => s.filter);
   const target = useStore((s) => s.target);
   const pacing = useStore((s) => s.pacing);
 
@@ -56,7 +57,7 @@ export default function ChromeBar() {
 
   async function start() {
     try {
-      await startSend({ parse, target, pacing });
+      await startSend({ parse, filter, target, pacing });
       setNotice(null);
     } catch (e) {
       setNotice(String(e));

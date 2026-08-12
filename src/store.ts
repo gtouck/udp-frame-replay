@@ -1,11 +1,15 @@
 import { create } from "zustand";
 import {
+  defaultFilterConfig,
   defaultPacingConfig,
   defaultParseConfig,
   defaultTargetConfig,
+  type Condition,
   type EngineSnapshot,
   type ErrorGroup,
   type FileInfo,
+  type FilterConfig,
+  type FilterRule,
   type LogEntry,
   type LogLevel,
   type PacingConfig,
@@ -20,12 +24,23 @@ interface AppStore {
   setFile: (f: FileInfo | null) => void;
 
   parse: ParseConfig;
-  /** 配置版本号。每次改动自增，用来作废预览缓存。 */
-  parseVersion: number;
+  filter: FilterConfig;
+
+  /**
+   * 预览版本号。解析规则或筛选规则一改就自增，用来作废预览缓存 ——
+   * 规则变了，屏幕上每一行的标注都跟着变，留着旧标注只会让人看到已经不成立的结果。
+   */
+  previewVersion: number;
+
   setParse: (patch: Partial<ParseConfig>) => void;
   setPrefix: (patch: Partial<Extract<PrefixRule, { mode: "fields" }>>) => void;
   setPrefixMode: (mode: PrefixRule["mode"]) => void;
   setSkipChars: (n: number) => void;
+
+  addFilterRule: (kind: Condition["kind"]) => void;
+  updateFilterRule: (i: number, patch: Partial<FilterRule>) => void;
+  updateFilterCondition: (i: number, patch: Partial<Condition>) => void;
+  removeFilterRule: (i: number) => void;
 
   target: TargetConfig;
   setTarget: (patch: Partial<TargetConfig>) => void;
@@ -58,16 +73,23 @@ interface AppStore {
   setNotice: (m: string | null) => void;
 }
 
+const newCondition = (kind: Condition["kind"]): Condition =>
+  kind === "field"
+    ? { kind: "field", index: 0, op: "equals", value: "" }
+    : { kind: "bytes", offset: 0, value: "", mask: null };
+
 export const useStore = create<AppStore>((set) => ({
   file: null,
   setFile: (file) => set({ file }),
 
   parse: defaultParseConfig(),
-  parseVersion: 0,
+  filter: defaultFilterConfig(),
+  previewVersion: 0,
+
   setParse: (patch) =>
     set((s) => ({
       parse: { ...s.parse, ...patch },
-      parseVersion: s.parseVersion + 1,
+      previewVersion: s.previewVersion + 1,
     })),
 
   setPrefix: (patch) =>
@@ -75,7 +97,7 @@ export const useStore = create<AppStore>((set) => ({
       if (s.parse.prefix.mode !== "fields") return s;
       return {
         parse: { ...s.parse, prefix: { ...s.parse.prefix, ...patch } },
-        parseVersion: s.parseVersion + 1,
+        previewVersion: s.previewVersion + 1,
       };
     }),
 
@@ -93,7 +115,7 @@ export const useStore = create<AppStore>((set) => ({
           : { mode: "chars", skipChars: 0 };
       return {
         parse: { ...s.parse, prefix },
-        parseVersion: s.parseVersion + 1,
+        previewVersion: s.previewVersion + 1,
       };
     }),
 
@@ -102,9 +124,46 @@ export const useStore = create<AppStore>((set) => ({
       if (s.parse.prefix.mode !== "chars") return s;
       return {
         parse: { ...s.parse, prefix: { mode: "chars", skipChars: n } },
-        parseVersion: s.parseVersion + 1,
+        previewVersion: s.previewVersion + 1,
       };
     }),
+
+  addFilterRule: (kind) =>
+    set((s) => ({
+      filter: {
+        rules: [
+          ...s.filter.rules,
+          { condition: newCondition(kind), negate: false, enabled: true },
+        ],
+      },
+      previewVersion: s.previewVersion + 1,
+    })),
+
+  updateFilterRule: (i, patch) =>
+    set((s) => ({
+      filter: {
+        rules: s.filter.rules.map((r, j) => (i === j ? { ...r, ...patch } : r)),
+      },
+      previewVersion: s.previewVersion + 1,
+    })),
+
+  updateFilterCondition: (i, patch) =>
+    set((s) => ({
+      filter: {
+        rules: s.filter.rules.map((r, j) =>
+          i === j
+            ? ({ ...r, condition: { ...r.condition, ...patch } } as FilterRule)
+            : r,
+        ),
+      },
+      previewVersion: s.previewVersion + 1,
+    })),
+
+  removeFilterRule: (i) =>
+    set((s) => ({
+      filter: { rules: s.filter.rules.filter((_, j) => j !== i) },
+      previewVersion: s.previewVersion + 1,
+    })),
 
   target: defaultTargetConfig(),
   setTarget: (patch) =>

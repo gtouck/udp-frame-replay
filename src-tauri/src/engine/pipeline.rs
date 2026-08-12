@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use crate::config::SendConfig;
 use crate::engine::{Shared, S_FINISHED};
+use crate::filter::CompiledFilter;
 use crate::net::udp::MAX_UDP_PAYLOAD;
 use crate::parse::parse_line;
 use crate::source::DataSource;
@@ -18,16 +19,18 @@ use crate::source::DataSource;
 /// 环形缓冲满时的退避间隔
 const BACKOFF: Duration = Duration::from_micros(50);
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn(
     shared: Arc<Shared>,
     source: Arc<DataSource>,
     cfg: SendConfig,
+    filter: CompiledFilter,
     start_line: u64,
     end_line: u64,
 ) -> JoinHandle<()> {
     thread::Builder::new()
         .name("frame-parser".into())
-        .spawn(move || run(shared, source, cfg, start_line, end_line))
+        .spawn(move || run(shared, source, cfg, filter, start_line, end_line))
         .expect("创建解析线程失败")
 }
 
@@ -35,6 +38,7 @@ fn run(
     shared: Arc<Shared>,
     source: Arc<DataSource>,
     cfg: SendConfig,
+    filter: CompiledFilter,
     start_line: u64,
     end_line: u64,
 ) {
@@ -111,6 +115,15 @@ fn run(
                     frame.data.len()
                 ));
             }
+            shared.ring.recycle(frame);
+            line += 1;
+            continue;
+        }
+
+        // 筛选放在解析之后：条件既可能看行内字段，也可能看解码出的字节。
+        // 不匹配的行直接跳过，连缓冲槽位都不占。
+        if !filter.is_empty() && !filter.accepts(&text, &frame.data) {
+            shared.stats.filtered_out.fetch_add(1, Ordering::Relaxed);
             shared.ring.recycle(frame);
             line += 1;
             continue;

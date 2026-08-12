@@ -1,5 +1,6 @@
 pub mod config;
 pub mod engine;
+pub mod filter;
 pub mod log;
 pub mod net;
 pub mod parse;

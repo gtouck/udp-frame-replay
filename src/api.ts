@@ -43,6 +43,8 @@ export interface LinePreview {
   trailing: string;
   byteLen: number;
   truncated: boolean;
+  /** 被筛选规则排除：解析没问题，但不会发出去 */
+  filtered: boolean;
   error: ParseErrorKind | null;
   errorMsg: string | null;
 }
@@ -52,6 +54,26 @@ export interface FileInfo {
   sizeBytes: number;
   lineCount: number;
   indexMemoryBytes: number;
+}
+
+// ── 筛选规则 ────────────────────────────────────────────────
+
+export type TextOp = "equals" | "contains";
+
+export type Condition =
+  | { kind: "field"; index: number; op: TextOp; value: string }
+  | { kind: "bytes"; offset: number; value: string; mask: string | null };
+
+export interface FilterRule {
+  condition: Condition;
+  /** 取反：满足条件的反而被排除 */
+  negate: boolean;
+  enabled: boolean;
+}
+
+/** 多条规则之间是「与」的关系：全部满足才发送。 */
+export interface FilterConfig {
+  rules: FilterRule[];
 }
 
 // ── 发送目标 ────────────────────────────────────────────────
@@ -86,6 +108,7 @@ export interface PacingConfig {
 
 export interface SendConfig {
   parse: ParseConfig;
+  filter: FilterConfig;
   target: TargetConfig;
   pacing: PacingConfig;
 }
@@ -116,6 +139,8 @@ export interface EngineSnapshot {
   oversize: number;
   parsedFrames: number;
   skippedLines: number;
+  /** 解析成功但被筛选规则排除的行数 */
+  filteredOut: number;
   currentLine: number;
   loopsDone: number;
   pending: number;
@@ -157,10 +182,12 @@ export const closeFile = () => invoke<void>("close_file");
 
 export const fileInfo = () => invoke<FileInfo | null>("file_info");
 
-export const preview = (start: number, count: number, config: ParseConfig) =>
-  invoke<LinePreview[]>("preview", { start, count, config });
-
-// ── 默认配置 ────────────────────────────────────────────────
+export const preview = (
+  start: number,
+  count: number,
+  config: ParseConfig,
+  filter: FilterConfig,
+) => invoke<LinePreview[]>("preview", { start, count, config, filter });
 
 export const networkInterfaces = () =>
   invoke<InterfaceInfo[]>("network_interfaces");
@@ -196,6 +223,8 @@ export const defaultParseConfig = (): ParseConfig => ({
   },
   hex: { ignoreChars: ":-," },
 });
+
+export const defaultFilterConfig = (): FilterConfig => ({ rules: [] });
 
 export const defaultTargetConfig = (): TargetConfig => ({
   mode: "unicast",

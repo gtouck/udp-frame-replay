@@ -92,6 +92,14 @@ export default function StatusBar() {
             alert={engine.skippedLines > 0}
             title="解析失败被跳过的行"
           />
+          {engine.filteredOut > 0 && (
+            <Readout
+              label="已筛掉"
+              value={formatCount(engine.filteredOut)}
+              width={9}
+              title="解析没问题，但不满足筛选规则，没有发出"
+            />
+          )}
           {engine.oversize > 0 && (
             <Readout
               label="超长"

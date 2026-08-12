@@ -5,8 +5,9 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::State;
 
-use crate::config::{ParseConfig, SendConfig};
+use crate::config::{FilterConfig, ParseConfig, SendConfig};
 use crate::engine::{Engine, EngineSnapshot, SentFrame};
+use crate::filter::CompiledFilter;
 use crate::log::{ErrorGroup, LogEntry};
 use crate::net::{list_interfaces, InterfaceInfo};
 use crate::parse::{self, ParseErrorKind};
@@ -38,6 +39,8 @@ pub struct LinePreview {
     pub byte_len: u32,
     /// 展示内容是否被截断
     pub truncated: bool,
+    /// 被筛选规则排除（解析没问题，但不会发出去）
+    pub filtered: bool,
     pub error: Option<ParseErrorKind>,
     pub error_msg: Option<String>,
 }
@@ -85,10 +88,15 @@ pub fn preview(
     start: usize,
     count: usize,
     config: ParseConfig,
+    filter: FilterConfig,
     state: State<'_, AppState>,
 ) -> Result<Vec<LinePreview>, String> {
     let guard = state.source.read();
     let src = guard.as_ref().ok_or("尚未打开文件")?;
+
+    // 规则写到一半时会有非法的十六进制，那不是错误，只是还没写完 ——
+    // 预览退回「不筛选」，等规则写完整了自然就生效了
+    let compiled = CompiledFilter::compile(&filter, &config.prefix).ok();
 
     let count = count.min(MAX_PREVIEW_LINES);
     let end = (start + count).min(src.line_count());
@@ -107,6 +115,11 @@ pub fn preview(
 
         let (spans, err) = parse::parse_line(&text, &config, &mut buf);
 
+        let filtered = err.is_none()
+            && compiled
+                .as_ref()
+                .is_some_and(|f| !f.is_empty() && !f.accepts(&text, &buf));
+
         let (prefix, t1) = clip(&text[..spans.data_start]);
         let (data, t2) = clip(&text[spans.data_start..spans.data_end]);
         let (trailing, t3) = clip(&text[spans.data_end..]);
@@ -118,6 +131,7 @@ pub fn preview(
             trailing,
             byte_len: buf.len() as u32,
             truncated: t1 || t2 || t3,
+            filtered,
             error: err,
             error_msg: err.map(|e| e.message().to_string()),
         });

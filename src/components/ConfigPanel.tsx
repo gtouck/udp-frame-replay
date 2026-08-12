@@ -1,3 +1,4 @@
+import FilterSection from "./config/FilterSection";
 import PacingSection from "./config/PacingSection";
 import ParseSection from "./config/ParseSection";
 import TargetSection from "./config/TargetSection";
@@ -8,6 +9,10 @@ export default function ConfigPanel() {
     <aside className="config">
       <Group name="解析规则">
         <ParseSection />
+      </Group>
+
+      <Group name="筛选规则">
+        <FilterSection />
       </Group>
 
       <Group name="发送目标">

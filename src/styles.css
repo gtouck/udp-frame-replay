@@ -317,6 +317,112 @@ body {
   color: var(--ink-faint);
 }
 
+/* ── 筛选规则卡片 ─────────────────────────────────────────── */
+.rule {
+  border: 1px solid var(--seam);
+  border-radius: var(--r);
+  background: var(--screen);
+  padding: 6px 7px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rule[data-off="true"] {
+  opacity: 0.45;
+}
+
+.rule-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rule-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.rule-toggle input {
+  accent-color: var(--sig-compute);
+  margin: 0;
+  flex: none;
+}
+
+.rule-name {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+}
+
+.rule-negate {
+  flex: none;
+  font: 500 10px/1 var(--font-label);
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px solid var(--seam);
+  border-radius: 2px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.rule-negate[aria-pressed="true"] {
+  color: var(--screen);
+  background: var(--sig-replace);
+  border-color: var(--sig-replace);
+}
+
+.rule-remove {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+.rule-remove:hover {
+  color: var(--sig-error);
+}
+
+.rule-body {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+}
+.rule-body .input,
+.rule-body .select {
+  min-width: 0;
+}
+
+.rule-idx {
+  flex: none;
+  width: 52px;
+  text-align: right;
+}
+
+.rule-op {
+  flex: none;
+  width: 62px;
+}
+
+.rule-mask {
+  flex: none;
+  width: 66px;
+}
+
+.rule-add {
+  display: flex;
+  gap: 5px;
+}
+.rule-add .btn {
+  flex: 1;
+}
+
 /* ── 屏幕区 ───────────────────────────────────────────────── */
 .screens {
   grid-area: screens;
@@ -418,6 +524,14 @@ body {
   font-variant-numeric: tabular-nums;
   border-right: 1px solid #171b22;
   margin-right: 10px;
+}
+
+/* 被筛选规则排除的行整体压暗：解析没问题，只是不会发出去 */
+.row[data-filtered="true"] {
+  opacity: 0.32;
+}
+.row[data-filtered="true"]:hover {
+  opacity: 0.6;
 }
 
 /* 三段标注：丢弃的前缀退到背景，被采用的数据体最亮 */

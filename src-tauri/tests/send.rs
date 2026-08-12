@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use data_perf_lib::config::{
-    Delimiter, PacingConfig, ParseConfig, PrefixRule, SendConfig, TargetConfig, TargetKind,
-    TextEncoding,
+    Condition, Delimiter, FilterConfig, FilterRule, PacingConfig, ParseConfig, PrefixRule,
+    SendConfig, TargetConfig, TargetKind, TextEncoding, TextOp,
 };
 use data_perf_lib::engine::Engine;
 use data_perf_lib::log::LogSink;
@@ -52,6 +52,7 @@ fn cfg(port: u16) -> SendConfig {
             },
             hex: Default::default(),
         },
+        filter: Default::default(),
         target: TargetConfig {
             kind: TargetKind::Unicast {
                 host: "127.0.0.1".into(),
@@ -315,4 +316,177 @@ fn multicast_loopback_reaches_a_joined_receiver() {
         "组播回环未收到任何数据；若本机禁用了组播回环，此项会失败"
     );
     assert_eq!(frames[0], vec![0x01, 0x02, 0x03]);
+}
+
+// ── 筛选规则 ────────────────────────────────────────────────
+
+const MIXED: &str = "\
+[TX] 000001 发送 01 02 03
+[RX] 000002 接收 AA BB
+[TX] 000003 发送 01 FF FF
+[RX] 000004 接收 CC DD
+[TX] 000005 发送 02 03 04
+";
+
+fn only(condition: Condition, negate: bool) -> FilterConfig {
+    FilterConfig {
+        rules: vec![FilterRule {
+            condition,
+            negate,
+            enabled: true,
+        }],
+    }
+}
+
+#[test]
+fn field_filter_sends_only_matching_lines() {
+    let (frames, _) = run(MIXED, |c| {
+        c.filter = only(
+            Condition::Field {
+                index: 0,
+                op: TextOp::Equals,
+                value: "[TX]".into(),
+            },
+            false,
+        );
+    });
+
+    assert_eq!(frames.len(), 3, "只有三行以 [TX] 开头");
+    assert_eq!(frames[0], vec![0x01, 0x02, 0x03]);
+    assert_eq!(frames[1], vec![0x01, 0xFF, 0xFF]);
+    assert_eq!(frames[2], vec![0x02, 0x03, 0x04]);
+}
+
+#[test]
+fn negated_field_filter_excludes_matching_lines() {
+    let (frames, _) = run(MIXED, |c| {
+        c.filter = only(
+            Condition::Field {
+                index: 0,
+                op: TextOp::Equals,
+                value: "[TX]".into(),
+            },
+            true,
+        );
+    });
+
+    assert_eq!(frames.len(), 2, "取反后只剩 [RX] 两行");
+    assert_eq!(frames[0], vec![0xAA, 0xBB]);
+    assert_eq!(frames[1], vec![0xCC, 0xDD]);
+}
+
+#[test]
+fn byte_filter_matches_on_decoded_data() {
+    let (frames, _) = run(MIXED, |c| {
+        c.filter = only(
+            Condition::Bytes {
+                offset: 0,
+                value: "01".into(),
+                mask: None,
+            },
+            false,
+        );
+    });
+
+    assert_eq!(frames.len(), 2, "首字节为 01 的有两行");
+    assert_eq!(frames[0], vec![0x01, 0x02, 0x03]);
+    assert_eq!(frames[1], vec![0x01, 0xFF, 0xFF]);
+}
+
+#[test]
+fn negative_offset_filter_matches_from_frame_end() {
+    let (frames, _) = run(MIXED, |c| {
+        c.filter = only(
+            Condition::Bytes {
+                offset: -2,
+                value: "FF FF".into(),
+                mask: None,
+            },
+            false,
+        );
+    });
+
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0], vec![0x01, 0xFF, 0xFF]);
+}
+
+#[test]
+fn multiple_rules_combine_with_and() {
+    let (frames, _) = run(MIXED, |c| {
+        c.filter = FilterConfig {
+            rules: vec![
+                FilterRule {
+                    condition: Condition::Field {
+                        index: 0,
+                        op: TextOp::Equals,
+                        value: "[TX]".into(),
+                    },
+                    negate: false,
+                    enabled: true,
+                },
+                FilterRule {
+                    condition: Condition::Bytes {
+                        offset: 0,
+                        value: "01".into(),
+                        mask: None,
+                    },
+                    negate: false,
+                    enabled: true,
+                },
+            ],
+        };
+    });
+
+    assert_eq!(frames.len(), 2, "同时满足两条的行");
+    assert_eq!(frames[0], vec![0x01, 0x02, 0x03]);
+    assert_eq!(frames[1], vec![0x01, 0xFF, 0xFF]);
+}
+
+#[test]
+fn filtered_out_lines_are_counted_separately_from_errors() {
+    let path = temp_file(MIXED);
+    let (sock, port) = receiver();
+
+    let mut c = cfg(port);
+    c.filter = only(
+        Condition::Field {
+            index: 0,
+            op: TextOp::Equals,
+            value: "[TX]".into(),
+        },
+        false,
+    );
+
+    let src = Arc::new(DataSource::open(&path).unwrap());
+    let engine = Engine::start(src, c, Arc::new(LogSink::default())).unwrap();
+    let frames = collect(&sock, 3, Duration::from_millis(800));
+    std::thread::sleep(Duration::from_millis(50));
+    let snap = engine.snapshot();
+    engine.shutdown();
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(frames.len(), 3);
+    assert_eq!(snap.sent_frames, 3);
+    assert_eq!(snap.filtered_out, 2, "被筛掉的行要单独计数");
+    assert_eq!(snap.skipped_lines, 0, "筛掉不是解析错误");
+}
+
+#[test]
+fn invalid_filter_is_rejected_before_starting() {
+    let path = temp_file(MIXED);
+    let src = Arc::new(DataSource::open(&path).unwrap());
+
+    let mut c = cfg(19997);
+    c.filter = only(
+        Condition::Bytes {
+            offset: 0,
+            value: "ZZ".into(),
+            mask: None,
+        },
+        false,
+    );
+
+    let err = Engine::start(src, c, Arc::new(LogSink::default())).unwrap_err();
+    assert!(err.to_string().contains("筛选规则有误"), "实际：{err}");
+    let _ = std::fs::remove_file(&path);
 }

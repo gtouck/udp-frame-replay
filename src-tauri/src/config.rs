@@ -120,6 +120,55 @@ pub struct ParseConfig {
     pub hex: HexRule,
 }
 
+// ── 筛选规则 ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextOp {
+    Equals,
+    Contains,
+}
+
+/// 一条筛选条件
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Condition {
+    /// 按行内字段的文本匹配。字段序号从行首算起，0-based。
+    #[serde(rename_all = "camelCase")]
+    Field {
+        index: usize,
+        op: TextOp,
+        value: String,
+    },
+
+    /// 按数据体中的字节匹配
+    #[serde(rename_all = "camelCase")]
+    Bytes {
+        /// 字节偏移。负数表示从帧尾倒数，-2 配两字节即匹配最后两字节。
+        offset: i64,
+        /// 期望的字节序列，十六进制文本
+        value: String,
+        /// 可选掩码，十六进制文本，长度须与 value 一致
+        mask: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterRule {
+    pub condition: Condition,
+    /// 取反：满足条件的反而被排除
+    pub negate: bool,
+    pub enabled: bool,
+}
+
+/// 多条规则之间是「与」的关系：全部满足才发送。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterConfig {
+    pub rules: Vec<FilterRule>,
+}
+
 // ── 发送目标 ────────────────────────────────────────────────
 
 /// 发送方式
@@ -200,6 +249,8 @@ impl Default for PacingConfig {
 #[serde(rename_all = "camelCase")]
 pub struct SendConfig {
     pub parse: ParseConfig,
+    #[serde(default)]
+    pub filter: FilterConfig,
     pub target: TargetConfig,
     pub pacing: PacingConfig,
 }
@@ -317,6 +368,28 @@ mod tests {
                 hex: HexRule {
                     ignore_chars: ":-,".into(),
                 },
+            },
+            filter: FilterConfig {
+                rules: vec![
+                    FilterRule {
+                        condition: Condition::Field {
+                            index: 0,
+                            op: TextOp::Equals,
+                            value: "[TX]".into(),
+                        },
+                        negate: false,
+                        enabled: true,
+                    },
+                    FilterRule {
+                        condition: Condition::Bytes {
+                            offset: -2,
+                            value: "3F 2B".into(),
+                            mask: Some("FF F0".into()),
+                        },
+                        negate: true,
+                        enabled: true,
+                    },
+                ],
             },
             target: TargetConfig {
                 kind: TargetKind::Multicast {

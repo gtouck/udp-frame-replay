@@ -9,11 +9,12 @@ const ROW_H = 22;
 export default function SourceView() {
   const file = useStore((s) => s.file);
   const config = useStore((s) => s.parse);
-  const version = useStore((s) => s.parseVersion);
+  const filter = useStore((s) => s.filter);
+  const version = useStore((s) => s.previewVersion);
 
   const lineCount = file?.lineCount ?? 0;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { requestRange, getLine } = usePreview(config, version);
+  const { requestRange, getLine } = usePreview(config, filter, version);
 
   const virt = useVirtualizer({
     count: lineCount,
@@ -51,6 +52,7 @@ export default function SourceView() {
                   key={v.key}
                   className="row"
                   data-error={row?.error ? "true" : undefined}
+                  data-filtered={row?.filtered ? "true" : undefined}
                   style={{ transform: `translateY(${v.start}px)` }}
                 >
                   <span className="row-no">{v.index + 1}</span>

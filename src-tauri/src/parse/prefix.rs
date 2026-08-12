@@ -1,7 +1,100 @@
 //! 前缀剥离：定位数据体在行内的起始字节偏移。
 
-use crate::config::PrefixRule;
+use crate::config::{Delimiter, PrefixRule};
 use crate::parse::ParseErrorKind;
+
+/// 按分隔符切分出的字段迭代器，产出 `(起始字节偏移, 字段内容)`。
+///
+/// 前缀剥离和筛选规则都要按字段定位，共用同一套切分语义，
+/// 免得两处对「连续分隔符」「空字段」的理解出现偏差。
+pub struct Fields<'a, 'd> {
+    text: &'a str,
+    delim: &'d Delimiter,
+    collapse: bool,
+    pos: usize,
+    finished: bool,
+}
+
+impl<'a, 'd> Fields<'a, 'd> {
+    pub fn new(text: &'a str, delim: &'d Delimiter, collapse: bool) -> Self {
+        Fields {
+            text,
+            delim,
+            collapse,
+            pos: 0,
+            finished: false,
+        }
+    }
+
+    /// 从 `self.pos` 开始，返回下一个分隔符的字节偏移与其字节长度
+    fn next_delim(&self) -> Option<(usize, usize)> {
+        self.text[self.pos..]
+            .char_indices()
+            .find(|(_, c)| self.delim.is_delim(*c))
+            .map(|(i, c)| (self.pos + i, c.len_utf8()))
+    }
+}
+
+impl<'a> Iterator for Fields<'a, '_> {
+    type Item = (usize, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished || self.pos > self.text.len() {
+            return None;
+        }
+
+        if self.collapse {
+            // 连续分隔符算一个：先吃掉分隔符，字段是极长的非分隔符段
+            while self.pos < self.text.len() {
+                let c = self.text[self.pos..].chars().next()?;
+                if self.delim.is_delim(c) {
+                    self.pos += c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if self.pos >= self.text.len() {
+                self.finished = true;
+                return None;
+            }
+            let start = self.pos;
+            match self.next_delim() {
+                Some((d, _)) => {
+                    self.pos = d;
+                    Some((start, &self.text[start..d]))
+                }
+                None => {
+                    self.pos = self.text.len();
+                    self.finished = true;
+                    Some((start, &self.text[start..]))
+                }
+            }
+        } else {
+            // 不折叠：每个分隔符都结束一个字段，`a,,b` 是三个字段
+            let start = self.pos;
+            match self.next_delim() {
+                Some((d, len)) => {
+                    self.pos = d + len;
+                    Some((start, &self.text[start..d]))
+                }
+                None => {
+                    self.finished = true;
+                    Some((start, &self.text[start..]))
+                }
+            }
+        }
+    }
+}
+
+/// 取第 `n` 个字段的内容（0-based）
+pub fn field_at<'a>(
+    text: &'a str,
+    delim: &Delimiter,
+    collapse: bool,
+    n: usize,
+) -> Option<&'a str> {
+    Fields::new(text, delim, collapse).nth(n).map(|(_, s)| s)
+}
 
 /// 返回数据体起始的字节偏移。
 pub fn strip(text: &str, rule: &PrefixRule) -> Result<usize, ParseErrorKind> {
@@ -21,12 +114,13 @@ pub fn strip(text: &str, rule: &PrefixRule) -> Result<usize, ParseErrorKind> {
 /// `collapse` 为真时连续分隔符视为一个（不产生空字段）；为假时 `a,,b` 是三个字段。
 fn field_start(
     text: &str,
-    delimiter: &crate::config::Delimiter,
+    delimiter: &Delimiter,
     collapse: bool,
     n: usize,
 ) -> Result<usize, ParseErrorKind> {
     if n == 0 {
-        // 第 0 个字段：collapse 模式下要跳过行首的分隔符
+        // 第 0 个字段单独处理：整行都是分隔符时也要返回一个合法偏移，
+        // 让后续判成「没有数据」而不是「字段不够」—— 前者更贴近实情
         if collapse {
             let off = text
                 .char_indices()
@@ -38,51 +132,10 @@ fn field_start(
         return Ok(0);
     }
 
-    let mut field_idx = 0usize;
-    let mut in_field = false;
-    let mut chars = text.char_indices().peekable();
-
-    // collapse 模式下先跳过行首分隔符，避免把它算成一个空字段
-    if collapse {
-        while let Some((_, c)) = chars.peek() {
-            if delimiter.is_delim(*c) {
-                chars.next();
-            } else {
-                break;
-            }
-        }
-    }
-
-    while let Some((i, c)) = chars.next() {
-        if delimiter.is_delim(c) {
-            if in_field || !collapse {
-                // 一个字段到此结束
-                field_idx += 1;
-                in_field = false;
-
-                if collapse {
-                    // 吞掉后续连续分隔符
-                    while let Some((_, nc)) = chars.peek() {
-                        if delimiter.is_delim(*nc) {
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                if field_idx == n {
-                    // 下一个字符即为目标字段起点
-                    return Ok(chars.peek().map(|(j, _)| *j).unwrap_or(text.len()));
-                }
-            }
-            let _ = i;
-        } else {
-            in_field = true;
-        }
-    }
-
-    Err(ParseErrorKind::NotEnoughFields)
+    Fields::new(text, delimiter, collapse)
+        .nth(n)
+        .map(|(off, _)| off)
+        .ok_or(ParseErrorKind::NotEnoughFields)
 }
 
 /// 跳过 `n` 个 Unicode 字符后的字节偏移。
@@ -187,6 +240,60 @@ mod tests {
     fn not_enough_fields_is_error() {
         let r = fields(Delimiter::Whitespace, true, 5);
         assert_eq!(strip("a b c", &r), Err(ParseErrorKind::NotEnoughFields));
+    }
+
+    fn collect<'a>(text: &'a str, d: &Delimiter, collapse: bool) -> Vec<&'a str> {
+        Fields::new(text, d, collapse).map(|(_, s)| s).collect()
+    }
+
+    #[test]
+    fn fields_collapse_runs_and_ignore_edges() {
+        assert_eq!(
+            collect("  a   b  c ", &Delimiter::Whitespace, true),
+            vec!["a", "b", "c"]
+        );
+    }
+
+    #[test]
+    fn fields_without_collapse_keep_empty_slots() {
+        assert_eq!(
+            collect("a,,b", &Delimiter::Comma, false),
+            vec!["a", "", "b"]
+        );
+        assert_eq!(
+            collect(",a", &Delimiter::Comma, false),
+            vec!["", "a"],
+            "行首分隔符应产生一个空字段"
+        );
+        assert_eq!(
+            collect("a,", &Delimiter::Comma, false),
+            vec!["a", ""],
+            "行尾分隔符应产生一个空字段"
+        );
+    }
+
+    #[test]
+    fn fields_offsets_land_on_char_boundaries() {
+        let line = "事件 序号 AA BB";
+        for (off, _) in Fields::new(line, &Delimiter::Whitespace, true) {
+            assert!(line.is_char_boundary(off), "偏移 {off} 切碎了汉字");
+        }
+    }
+
+    #[test]
+    fn field_at_reads_the_requested_field() {
+        let line = "[TX] 000123 发送 01 A5";
+        let d = Delimiter::Whitespace;
+        assert_eq!(field_at(line, &d, true, 0), Some("[TX]"));
+        assert_eq!(field_at(line, &d, true, 2), Some("发送"));
+        assert_eq!(field_at(line, &d, true, 9), None);
+    }
+
+    #[test]
+    fn all_delimiter_line_reports_no_data_not_missing_fields() {
+        let r = fields(Delimiter::Whitespace, true, 0);
+        // 整行空白时第 0 个字段的偏移落在行尾，交由 hex 阶段判成「没有数据」
+        assert_eq!(strip("    ", &r), Ok(4));
     }
 
     #[test]
