@@ -119,22 +119,29 @@ body {
   flex: none;
 }
 
+/* 路径分两段：目录可省略，文件名永远完整。
+   不用 direction:rtl —— 那会把开头的 / 甩到末尾。 */
 .bar-path {
+  display: flex;
+  align-items: baseline;
   font-family: var(--font-data);
   font-size: 11px;
-  color: var(--ink-dim);
+  color: var(--ink-faint);
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl; /* 路径过长时保留文件名一端 */
-  text-align: left;
 }
 
-.bar-path[data-empty="true"] {
+.bar-dir {
   color: var(--ink-faint);
-  direction: ltr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.bar-file {
+  color: var(--ink-dim);
+  flex: none;
 }
 
 .bar-group {
@@ -314,7 +321,8 @@ body {
 .screens {
   grid-area: screens;
   display: grid;
-  grid-auto-rows: 1fr;
+  /* 原文最高（要翻要读），发送数据次之，日志给固定一条带 */
+  grid-template-rows: 1.35fr 1fr 176px;
   gap: 1px;
   background: var(--seam);
   min-height: 0;
@@ -434,7 +442,6 @@ body {
 }
 .row-err {
   flex: none;
-  margin-left: auto;
   padding-left: 14px;
   color: var(--sig-error);
 }
@@ -524,4 +531,182 @@ body {
   margin-right: 12px;
   border-right: 1px solid var(--seam);
   padding-right: 12px;
+}
+
+.status-target {
+  flex: none;
+  padding-right: 12px;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+/* ── 顶栏分组分隔 ─────────────────────────────────────────── */
+.bar-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  background: var(--seam);
+  margin: 0 2px;
+}
+
+.btn-slim {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* ── 带后缀 / 单位的输入组 ────────────────────────────────── */
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.input-suffix {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.unit-select {
+  flex: none;
+  width: 58px;
+  font-family: var(--font-data);
+}
+
+.segments-inline {
+  margin-left: 4px;
+  width: auto;
+}
+.segments-inline .segment {
+  padding: 3px 9px;
+  font-size: 10px;
+}
+
+/* ── 发送数据 hex dump ────────────────────────────────────── */
+.dump {
+  font: 400 12px/var(--row-h) var(--font-data);
+  padding: 2px 0;
+}
+
+.dump-row {
+  display: flex;
+  align-items: center;
+  height: var(--row-h);
+  white-space: pre;
+  padding-right: 10px;
+}
+.dump-row:hover {
+  background: #12151b;
+}
+
+.dump-line {
+  flex: none;
+  width: 78px;
+  padding-right: 10px;
+  text-align: right;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  border-right: 1px solid #171b22;
+  margin-right: 10px;
+}
+
+.dump-hex {
+  color: var(--ink-bright);
+  flex: none;
+}
+
+.dump-ascii {
+  color: var(--ink-dim);
+  padding-left: 16px;
+  flex: none;
+  opacity: 0.7;
+}
+
+.dump-len {
+  margin-left: auto;
+  padding-left: 14px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* ── 日志 ─────────────────────────────────────────────────── */
+.loglines {
+  font: 400 12px/18px var(--font-data);
+  padding: 3px 0;
+}
+
+.logline {
+  display: flex;
+  gap: 10px;
+  padding: 0 10px;
+  align-items: baseline;
+}
+.logline:hover {
+  background: #12151b;
+}
+
+.log-time {
+  flex: none;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.log-level {
+  flex: none;
+  width: 3em;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+.logline[data-level="warn"] .log-level {
+  color: var(--sig-replace);
+}
+.logline[data-level="error"] .log-level {
+  color: var(--sig-error);
+}
+
+.log-text {
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 解析错误聚合条：一类一行，不是一行一条 */
+.errgroups {
+  border-bottom: 1px solid var(--seam);
+  background: rgba(240, 113, 94, 0.05);
+}
+
+.errgroup {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 10px;
+  font: 400 12px/1.5 var(--font-data);
+}
+
+.errgroup-count {
+  flex: none;
+  min-width: 6ch;
+  text-align: right;
+  color: var(--sig-error);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.errgroup-msg {
+  flex: none;
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+
+.errgroup-lines {
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

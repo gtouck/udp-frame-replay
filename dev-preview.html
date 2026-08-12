@@ -36,33 +36,183 @@
         indexMemoryBytes: 4194304,
       };
 
+      // ── 模拟中的发送任务 ──────────────────────────────────
+      let run = null;
+      let logSeq = 0;
+      const logs = [];
+      const addLog = (level, text) =>
+        logs.push({ seq: logSeq++, at: Date.now(), level, text });
+
+      const bytesOf = (i) => {
+        const s = SAMPLE[i % SAMPLE.length];
+        return s.d.split(" ").map((h) => parseInt(h, 16));
+      };
+
+      function snapshot() {
+        if (!run) return null;
+        const secs = (Date.now() - run.startedAt) / 1000;
+        if (run.state === "running") {
+          run.sent = Math.min(9_999_999, Math.floor(secs * 12847));
+        }
+        const jitter = [];
+        for (let i = 0; i < 200; i++) {
+          // 大部分贴着基线，偶尔一根冒出来 —— 真实调度就是这样
+          const spike = Math.random() < 0.06;
+          jitter.push(
+            run.intervalUs + (spike ? Math.random() * 60 : Math.random() * 6 - 3),
+          );
+        }
+        return {
+          state: run.state,
+          sentFrames: run.sent,
+          sentBytes: run.sent * 8,
+          droppedBufferFull: Math.floor(run.sent / 90000),
+          refused: 0,
+          ioErrors: 0,
+          oversize: 0,
+          parsedFrames: run.sent + 3,
+          skippedLines: 3,
+          currentLine: run.sent % FILE.lineCount,
+          loopsDone: 0,
+          pending: 128,
+          jitterP50Us: 3,
+          jitterP99Us: 41,
+          recentIntervals: jitter,
+          targetDesc: run.desc,
+          intervalUs: run.intervalUs,
+        };
+      }
+
       window.__TAURI_INTERNALS__ = {
         transformCallback: (cb) => cb,
         invoke: async (cmd, args) => {
-          if (cmd === "open_file") return FILE;
-          if (cmd === "file_info") return FILE;
-          if (cmd === "close_file") return null;
-          if (cmd === "preview") {
-            const { start, count } = args;
-            const rows = [];
-            for (let i = 0; i < count && start + i < FILE.lineCount; i++) {
-              const lineNo = start + i + 1;
-              const s = SAMPLE[lineNo % SAMPLE.length];
-              const err = ERRORS[lineNo % 1000];
-              rows.push({
-                lineNo,
-                prefix: s.p,
-                data: err ? s.d.slice(0, 5) : s.d,
-                trailing: s.t,
-                byteLen: err ? 2 : (s.d.split(" ").length),
-                truncated: false,
-                error: err ? err[0] : null,
-                errorMsg: err ? err[1] : null,
-              });
+          switch (cmd) {
+            // 文件选择框是原生的，预览里直接返回样本路径
+            case "plugin:dialog|open":
+              return FILE.path;
+
+            case "open_file":
+              addLog("info", `已打开 ${FILE.path} · 1048576 行 · 索引占用 4096 KB`);
+              return FILE;
+            case "file_info":
+              return FILE;
+            case "close_file":
+              return null;
+
+            case "preview": {
+              const { start, count } = args;
+              const rows = [];
+              for (let i = 0; i < count && start + i < FILE.lineCount; i++) {
+                const lineNo = start + i + 1;
+                const s = SAMPLE[lineNo % SAMPLE.length];
+                const err = ERRORS[lineNo % 1000];
+                rows.push({
+                  lineNo,
+                  prefix: s.p,
+                  data: err ? (err[0] === "emptyData" ? "" : "01 A5 3") : s.d,
+                  trailing: s.t,
+                  byteLen: err ? 0 : s.d.split(" ").length,
+                  truncated: false,
+                  error: err ? err[0] : null,
+                  errorMsg: err ? err[1] : null,
+                });
+              }
+              return rows;
             }
-            return rows;
+
+            case "network_interfaces":
+              return [
+                { name: "en0", ip: "192.168.1.42", isLoopback: false },
+                { name: "en5", ip: "10.20.30.11", isLoopback: false },
+                { name: "lo0", ip: "127.0.0.1", isLoopback: true },
+              ];
+
+            case "start_send": {
+              const c = args.config;
+              const t = c.target;
+              run = {
+                state: "running",
+                sent: 0,
+                startedAt: Date.now(),
+                intervalUs: c.pacing.intervalUs || 78,
+                desc:
+                  t.mode === "unicast"
+                    ? `单播 → ${t.host}:${t.port}`
+                    : `组播 → ${t.group}:${t.port}（网卡 ${t.interface ?? "系统默认"}，TTL ${t.ttl}）`,
+              };
+              addLog("info", `开始发送 · ${run.desc}`);
+              addLog("info", "本地端口 0.0.0.0:54233");
+              addLog(
+                "info",
+                `行范围 ${c.pacing.startLine} ~ ${c.pacing.endLine || FILE.lineCount}，间隔 ${c.pacing.intervalUs}μs`,
+              );
+              addLog(
+                "warn",
+                "内核发送缓冲已满，开始丢帧。可以调大发送缓冲或放宽发送间隔（后续同类不再单独记录）",
+              );
+              return null;
+            }
+            case "pause_send":
+              if (run) run.state = "paused";
+              return null;
+            case "resume_send":
+              if (run) run.state = "running";
+              return null;
+            case "step_send":
+              if (run) run.sent += 1;
+              return null;
+            case "stop_send":
+              if (run) addLog("info", `停止发送 · 共发出 ${run.sent} 帧`);
+              run = null;
+              return null;
+
+            case "engine_status":
+              return snapshot();
+
+            case "recent_frames": {
+              if (!run) return [];
+              const n = Math.min(args.limit, 60);
+              const out = [];
+              for (let i = 0; i < n; i++) {
+                const idx = run.sent - n + i;
+                if (idx < 0) continue;
+                const b = bytesOf(idx);
+                out.push({
+                  lineNo: (idx % FILE.lineCount) + 1,
+                  len: b.length,
+                  bytes: b,
+                  at: Date.now(),
+                });
+              }
+              return out;
+            }
+
+            case "log_entries":
+              return logs.filter((l) => l.seq >= args.after).slice(0, args.limit);
+
+            case "error_groups":
+              return [
+                {
+                  kind: "oddHexDigits",
+                  message: "十六进制字符数为奇数",
+                  count: 1204,
+                  sampleLines: [11, 1011, 2011, 3011, 4011, 5011, 6011, 7011],
+                },
+                {
+                  kind: "notEnoughFields",
+                  message: "字段数不足，无法定位数据体",
+                  count: 1048,
+                  sampleLines: [41, 1041, 2041, 3041],
+                },
+              ];
+
+            case "clear_log":
+              logs.length = 0;
+              return null;
+
+            default:
+              throw new Error("预览桩件未实现命令：" + cmd);
           }
-          throw new Error("预览桩件未实现命令：" + cmd);
         },
       };
     </script>

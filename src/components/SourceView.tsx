@@ -60,11 +60,11 @@ export default function SourceView() {
                       <span className="seg-prefix">{row.prefix}</span>
                       <span className="seg-data">{row.data}</span>
                       <span className="seg-trailing">{row.trailing}</span>
-                      {row.error ? (
-                        <span className="row-err">{row.errorMsg}</span>
-                      ) : (
-                        <span className="row-len">{row.byteLen} B</span>
-                      )}
+                      {/* 错误紧跟数据，就近说明是哪一段出的问题 */}
+                      {row.error && <span className="row-err">{row.errorMsg}</span>}
+                      <span className="row-len">
+                        {row.error ? "" : `${row.byteLen} B`}
+                      </span>
                     </>
                   ) : (
                     <span className="seg-trailing">…</span>

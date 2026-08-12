@@ -1,4 +1,7 @@
 pub mod config;
+pub mod engine;
+pub mod log;
+pub mod net;
 pub mod parse;
 pub mod source;
 
@@ -16,6 +19,17 @@ pub fn run() {
             commands::close_file,
             commands::file_info,
             commands::preview,
+            commands::network_interfaces,
+            commands::start_send,
+            commands::pause_send,
+            commands::resume_send,
+            commands::step_send,
+            commands::stop_send,
+            commands::engine_status,
+            commands::recent_frames,
+            commands::log_entries,
+            commands::error_groups,
+            commands::clear_log,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 应用启动失败");

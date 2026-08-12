@@ -1,15 +1,22 @@
 import ChromeBar from "./components/ChromeBar";
 import ConfigPanel from "./components/ConfigPanel";
+import LogView from "./components/LogView";
+import SendView from "./components/SendView";
 import SourceView from "./components/SourceView";
 import StatusBar from "./components/StatusBar";
+import { useEnginePolling } from "./useEnginePolling";
 
 export default function App() {
+  useEnginePolling();
+
   return (
     <div className="app">
       <ChromeBar />
       <ConfigPanel />
       <div className="screens">
         <SourceView />
+        <SendView />
+        <LogView />
       </div>
       <StatusBar />
     </div>

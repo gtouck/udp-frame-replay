@@ -1,9 +1,14 @@
 //! Tauri 命令层：前端与引擎之间的边界。
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use tauri::State;
 
-use crate::config::ParseConfig;
+use crate::config::{ParseConfig, SendConfig};
+use crate::engine::{Engine, EngineSnapshot, SentFrame};
+use crate::log::{ErrorGroup, LogEntry};
+use crate::net::{list_interfaces, InterfaceInfo};
 use crate::parse::{self, ParseErrorKind};
 use crate::source::{DataSource, FileInfo};
 use crate::state::AppState;
@@ -54,7 +59,13 @@ fn clip(s: &str) -> (String, bool) {
 pub fn open_file(path: String, state: State<'_, AppState>) -> Result<FileInfo, String> {
     let src = DataSource::open(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
     let info = src.info();
-    *state.source.write() = Some(src);
+    state.log.info(format!(
+        "已打开 {} · {} 行 · 索引占用 {} KB",
+        info.path,
+        info.line_count,
+        info.index_memory_bytes / 1024
+    ));
+    *state.source.write() = Some(Arc::new(src));
     Ok(info)
 }
 
@@ -113,4 +124,107 @@ pub fn preview(
     }
 
     Ok(out)
+}
+
+// ── 网络 ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn network_interfaces() -> Vec<InterfaceInfo> {
+    list_interfaces()
+}
+
+// ── 发送控制 ────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn start_send(config: SendConfig, state: State<'_, AppState>) -> Result<(), String> {
+    let mut slot = state.engine.lock();
+
+    // 上一次跑完的引擎留在槽里，先收干净再启动新的
+    if let Some(existing) = slot.as_ref() {
+        if !existing.is_finished() {
+            return Err("正在发送，请先停止".into());
+        }
+        if let Some(old) = slot.take() {
+            old.shutdown();
+        }
+    }
+
+    let source = state
+        .source
+        .read()
+        .as_ref()
+        .cloned()
+        .ok_or("尚未打开文件")?;
+
+    let engine = Engine::start(source, config, state.log.clone()).map_err(|e| {
+        let msg = e.to_string();
+        state.log.error(format!("启动失败：{msg}"));
+        msg
+    })?;
+
+    *slot = Some(engine);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pause_send(state: State<'_, AppState>) {
+    if let Some(e) = state.engine.lock().as_ref() {
+        e.pause();
+    }
+}
+
+#[tauri::command]
+pub fn resume_send(state: State<'_, AppState>) {
+    if let Some(e) = state.engine.lock().as_ref() {
+        e.resume();
+    }
+}
+
+/// 单步：暂停状态下放一帧出去，用于逐帧核对规则
+#[tauri::command]
+pub fn step_send(state: State<'_, AppState>) {
+    if let Some(e) = state.engine.lock().as_ref() {
+        e.step();
+    }
+}
+
+#[tauri::command]
+pub fn stop_send(state: State<'_, AppState>) {
+    let engine = state.engine.lock().take();
+    if let Some(e) = engine {
+        e.shutdown();
+    }
+}
+
+#[tauri::command]
+pub fn engine_status(state: State<'_, AppState>) -> Option<EngineSnapshot> {
+    state.engine.lock().as_ref().map(|e| e.snapshot())
+}
+
+#[tauri::command]
+pub fn recent_frames(limit: usize, state: State<'_, AppState>) -> Vec<SentFrame> {
+    state
+        .engine
+        .lock()
+        .as_ref()
+        .map(|e| e.recent_frames(limit.min(200)))
+        .unwrap_or_default()
+}
+
+// ── 日志 ────────────────────────────────────────────────────
+
+/// 按序号增量拉取，避免每次轮询都搬运整个日志
+#[tauri::command]
+pub fn log_entries(after: u64, limit: usize, state: State<'_, AppState>) -> Vec<LogEntry> {
+    state.log.entries_after(after, limit.min(2000))
+}
+
+#[tauri::command]
+pub fn error_groups(state: State<'_, AppState>) -> Vec<ErrorGroup> {
+    state.log.error_groups()
+}
+
+#[tauri::command]
+pub fn clear_log(state: State<'_, AppState>) {
+    state.log.clear();
 }

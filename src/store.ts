@@ -1,12 +1,19 @@
 import { create } from "zustand";
 import {
+  defaultPacingConfig,
   defaultParseConfig,
+  defaultTargetConfig,
+  type EngineSnapshot,
+  type ErrorGroup,
   type FileInfo,
+  type LogEntry,
+  type LogLevel,
+  type PacingConfig,
   type ParseConfig,
   type PrefixRule,
+  type SentFrame,
+  type TargetConfig,
 } from "./api";
-
-export type RunState = "idle" | "running" | "paused" | "error";
 
 interface AppStore {
   file: FileInfo | null;
@@ -20,8 +27,32 @@ interface AppStore {
   setPrefixMode: (mode: PrefixRule["mode"]) => void;
   setSkipChars: (n: number) => void;
 
-  runState: RunState;
-  setRunState: (s: RunState) => void;
+  target: TargetConfig;
+  setTarget: (patch: Partial<TargetConfig>) => void;
+  setTargetMode: (mode: TargetConfig["mode"]) => void;
+
+  pacing: PacingConfig;
+  setPacing: (patch: Partial<PacingConfig>) => void;
+
+  /** 引擎快照，由轮询写入。null 表示当前没有任务。 */
+  engine: EngineSnapshot | null;
+  setEngine: (s: EngineSnapshot | null) => void;
+
+  frames: SentFrame[];
+  setFrames: (f: SentFrame[]) => void;
+
+  logs: LogEntry[];
+  setLogs: (f: (prev: LogEntry[]) => LogEntry[]) => void;
+
+  errorGroups: ErrorGroup[];
+  setErrorGroups: (g: ErrorGroup[]) => void;
+
+  /** 实测发送速率，帧/秒。由前端从相邻两次快照算出。 */
+  rate: number;
+  setRate: (r: number) => void;
+
+  logFilter: LogLevel | "all";
+  setLogFilter: (f: LogLevel | "all") => void;
 
   notice: string | null;
   setNotice: (m: string | null) => void;
@@ -75,9 +106,58 @@ export const useStore = create<AppStore>((set) => ({
       };
     }),
 
-  runState: "idle",
-  setRunState: (runState) => set({ runState }),
+  target: defaultTargetConfig(),
+  setTarget: (patch) =>
+    set((s) => ({ target: { ...s.target, ...patch } as TargetConfig })),
+
+  setTargetMode: (mode) =>
+    set((s) => {
+      if (s.target.mode === mode) return s;
+      const common = {
+        bindAddr: s.target.bindAddr,
+        bindPort: s.target.bindPort,
+        sendBufferBytes: s.target.sendBufferBytes,
+      };
+      const target: TargetConfig =
+        mode === "unicast"
+          ? { mode: "unicast", host: "127.0.0.1", port: s.target.port, ...common }
+          : {
+              mode: "multicast",
+              group: "239.255.0.1",
+              port: s.target.port,
+              interface: null,
+              ttl: 1,
+              loopback: true,
+              ...common,
+            };
+      return { target };
+    }),
+
+  pacing: defaultPacingConfig(),
+  setPacing: (patch) => set((s) => ({ pacing: { ...s.pacing, ...patch } })),
+
+  engine: null,
+  setEngine: (engine) => set({ engine }),
+
+  frames: [],
+  setFrames: (frames) => set({ frames }),
+
+  logs: [],
+  setLogs: (fn) => set((s) => ({ logs: fn(s.logs) })),
+
+  errorGroups: [],
+  setErrorGroups: (errorGroups) => set({ errorGroups }),
+
+  rate: 0,
+  setRate: (rate) => set({ rate }),
+
+  logFilter: "all",
+  setLogFilter: (logFilter) => set({ logFilter }),
 
   notice: null,
   setNotice: (notice) => set({ notice }),
 }));
+
+/** 当前是否有正在运行或暂停的任务 */
+export const isActive = (e: EngineSnapshot | null) =>
+  e !== null && (e.state === "running" || e.state === "paused");

@@ -52,10 +52,13 @@ export default function TimingTape({ samples, targetUs }: Props) {
     const step = w / n;
     const start = samples.length - n;
 
+    // 每个样本至少画一格：齐整的梳齿本身就说明「稳」，
+    // 全空的带子只会让人以为坏了。
+    const MIN_TICK = 2;
+
     for (let i = 0; i < n; i++) {
       const dev = Math.abs(samples[start + i] - targetUs) / targetUs;
-      const tick = Math.min(dev, 1) * (h - 4);
-      if (tick < 0.5) continue;
+      const tick = MIN_TICK + Math.min(dev, 1) * (h - 4 - MIN_TICK);
       ctx.strokeStyle = dev > 0.25 ? bad : good;
       const x = Math.floor(i * step) + 0.5;
       ctx.beginPath();
