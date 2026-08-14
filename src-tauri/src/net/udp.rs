@@ -225,7 +225,7 @@ pub struct InterfaceInfo {
     pub is_loopback: bool,
 }
 
-/// 列出本机 IPv4 网卡，供组播出站网卡下拉选择。
+/// 列出本机 IPv4 网卡，供本地绑定地址与组播出站网卡下拉选择。
 pub fn list_interfaces() -> Vec<InterfaceInfo> {
     let mut out: Vec<InterfaceInfo> = if_addrs::get_if_addrs()
         .unwrap_or_default()
@@ -303,6 +303,16 @@ mod tests {
         };
         let s = UdpSender::build(&cfg).unwrap();
         assert_eq!(s.local_addr().unwrap().port(), 19100);
+    }
+
+    #[test]
+    fn honours_explicit_bind_address() {
+        let cfg = TargetConfig {
+            bind_addr: Some("127.0.0.1".into()),
+            ..unicast("127.0.0.1", 19005)
+        };
+        let s = UdpSender::build(&cfg).unwrap();
+        assert_eq!(s.local_addr().unwrap().ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
     }
 
     #[test]

@@ -13,6 +13,10 @@ export default function TargetSection() {
     networkInterfaces().then(setIfaces).catch(() => setIfaces([]));
   }, []);
 
+  const bindAddr = target.bindAddr ?? "";
+  const configuredBindMissing =
+    bindAddr !== "" && !ifaces.some((iface) => iface.ip === bindAddr);
+
   return (
     <>
       <Segments
@@ -88,12 +92,25 @@ export default function TargetSection() {
         onChange={(port) => setTarget({ port } as never)}
       />
 
-      <TextField
-        label="本地地址"
-        value={target.bindAddr ?? ""}
-        onChange={(v) => setTarget({ bindAddr: v || null })}
-        placeholder="留空为 0.0.0.0"
-      />
+      <Field label="本地地址" htmlFor="cfg-bind-addr">
+        <select
+          id="cfg-bind-addr"
+          className="select"
+          value={bindAddr}
+          onChange={(e) => setTarget({ bindAddr: e.target.value || null })}
+        >
+          <option value="">自动（0.0.0.0）</option>
+          {configuredBindMissing && (
+            <option value={bindAddr}>{bindAddr}（当前未检测到）</option>
+          )}
+          {ifaces.map((iface) => (
+            <option key={`bind-${iface.name}-${iface.ip}`} value={iface.ip}>
+              {iface.name} · {iface.ip}
+              {iface.isLoopback ? "（回环）" : ""}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <NumberField
         label="本地端口"
@@ -103,7 +120,10 @@ export default function TargetSection() {
         onChange={(v) => setTarget({ bindPort: v || null })}
       />
 
-      <Hint>本地端口填 0 由系统分配。有些接收端会校验源端口。</Hint>
+      <Hint>
+        本地地址读取自本机 IPv4 网卡；选择后套接字会绑定该 IP。选“自动”则绑定
+        0.0.0.0。本地端口填 0 由系统分配，有些接收端会校验源端口。
+      </Hint>
     </>
   );
 }
