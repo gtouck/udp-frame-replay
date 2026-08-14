@@ -91,7 +91,10 @@ body {
   gap: 10px;
   padding: 0 10px;
   border-bottom: 1px solid var(--seam);
-  background: var(--chrome);
+  background: linear-gradient(180deg, #181c22 0%, var(--chrome) 100%);
+  position: relative;
+  z-index: 10;
+  cursor: default;
 }
 
 .bar-mark {
@@ -117,6 +120,205 @@ body {
   letter-spacing: 0.06em;
   color: var(--ink);
   flex: none;
+}
+
+/* ── 融合式窗口控制 ───────────────────────────────────────── */
+.window-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.window-control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+
+.window-control-icon {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+/* Windows / Linux：操作区与顶栏等高，贴右边缘，不再像额外一层系统标题栏。 */
+.window-controls[data-platform="desktop"] {
+  align-self: stretch;
+  order: 2;
+  margin-right: -10px;
+}
+
+.window-controls[data-platform="desktop"] .window-control {
+  width: 42px;
+  height: 100%;
+}
+
+.window-controls[data-platform="desktop"] .window-control:hover {
+  color: var(--ink-bright);
+  background: var(--chrome-hi);
+}
+
+.window-controls[data-platform="desktop"]
+  .window-control[data-action="close"]:hover {
+  color: #fff;
+  background: #c94b45;
+}
+
+.window-controls[data-platform="desktop"]
+  .window-control[data-action="minimize"]
+  .window-control-icon::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 2px;
+  height: 1px;
+  background: currentColor;
+}
+
+.window-controls[data-platform="desktop"]
+  .window-control[data-action="maximize"]
+  .window-control-icon::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1px solid currentColor;
+}
+
+.window-controls[data-platform="desktop"]
+  .window-control[data-action="close"]
+  .window-control-icon::before,
+.window-controls[data-platform="desktop"]
+  .window-control[data-action="close"]
+  .window-control-icon::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 10px;
+  height: 1px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.window-controls[data-platform="desktop"]
+  .window-control[data-action="close"]
+  .window-control-icon::after {
+  transform: rotate(-45deg);
+}
+
+/* macOS：沿用左侧交通灯的位置与色彩，按钮仍属于同一条应用工具栏。 */
+.window-controls[data-platform="mac"] {
+  order: -1;
+  gap: 8px;
+  padding: 0 2px;
+  margin-right: 4px;
+}
+
+.window-controls[data-platform="mac"] .window-control {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #656b73;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.28);
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="close"] {
+  background: #ff5f57;
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="minimize"] {
+  background: #febc2e;
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="maximize"] {
+  background: #28c840;
+}
+
+.window-controls[data-platform="mac"] .window-control-icon {
+  width: 8px;
+  height: 8px;
+  color: rgba(27, 28, 30, 0.72);
+  opacity: 0;
+}
+
+.window-controls[data-platform="mac"]:hover .window-control-icon {
+  opacity: 1;
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="minimize"]
+  .window-control-icon::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 3.5px;
+  height: 1px;
+  background: currentColor;
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="close"]
+  .window-control-icon::before,
+.window-controls[data-platform="mac"]
+  .window-control[data-action="close"]
+  .window-control-icon::after {
+  content: "";
+  position: absolute;
+  top: 3.5px;
+  left: 1px;
+  width: 6px;
+  height: 1px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="close"]
+  .window-control-icon::after {
+  transform: rotate(-45deg);
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="maximize"]
+  .window-control-icon::before,
+.window-controls[data-platform="mac"]
+  .window-control[data-action="maximize"]
+  .window-control-icon::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="maximize"]
+  .window-control-icon::before {
+  left: 1px;
+  top: 1px;
+  border-width: 0 4px 4px 0;
+  border-color: transparent currentColor transparent transparent;
+}
+
+.window-controls[data-platform="mac"]
+  .window-control[data-action="maximize"]
+  .window-control-icon::after {
+  right: 1px;
+  bottom: 1px;
+  border-width: 4px 0 0 4px;
+  border-color: transparent transparent transparent currentColor;
 }
 
 /* 路径分两段：目录可省略，文件名永远完整。

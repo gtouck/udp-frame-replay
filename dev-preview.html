@@ -86,9 +86,19 @@
       }
 
       window.__TAURI_INTERNALS__ = {
+        metadata: {
+          currentWindow: { label: "main" },
+          currentWebview: { label: "main", windowLabel: "main" },
+        },
         transformCallback: (cb) => cb,
         invoke: async (cmd, args) => {
           switch (cmd) {
+            // 无边框窗口按钮在预览中只验证可点击，不操作浏览器窗口
+            case "plugin:window|close":
+            case "plugin:window|minimize":
+            case "plugin:window|toggle_maximize":
+              return null;
+
             // 文件选择框是原生的，预览里直接返回样本路径
             case "plugin:dialog|open":
               return FILE.path;

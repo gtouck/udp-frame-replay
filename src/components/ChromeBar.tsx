@@ -9,6 +9,7 @@ import {
   stopSend,
 } from "../api";
 import { hasBlockingProblem, isActive, useStore } from "../store";
+import WindowControls from "./WindowControls";
 
 /** 路径拆成目录与文件名两段：目录可以省略，文件名永远完整可见。 */
 const cut = (p: string) => Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -68,15 +69,26 @@ export default function ChromeBar() {
   }
 
   return (
-    <header className="bar">
-      <span className="bar-mark" aria-hidden />
-      <span className="bar-title">数据帧回放</span>
+    <header className="bar" data-tauri-drag-region>
+      <WindowControls />
+      <span className="bar-mark" data-tauri-drag-region aria-hidden />
+      <span className="bar-title" data-tauri-drag-region>
+        数据帧回放
+      </span>
 
-      <span className="bar-path" data-empty={file ? undefined : "true"}>
+      <span
+        className="bar-path"
+        data-empty={file ? undefined : "true"}
+        data-tauri-drag-region
+      >
         {file ? (
           <>
-            <span className="bar-dir">{dirOf(file.path)}</span>
-            <span className="bar-file">{baseOf(file.path)}</span>
+            <span className="bar-dir" data-tauri-drag-region>
+              {dirOf(file.path)}
+            </span>
+            <span className="bar-file" data-tauri-drag-region>
+              {baseOf(file.path)}
+            </span>
           </>
         ) : (
           "未打开文件"
