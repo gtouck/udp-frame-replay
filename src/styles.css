@@ -152,20 +152,11 @@ body {
   cursor: default;
 }
 
-.bar-mark {
-  width: 15px;
-  height: 15px;
-  border-radius: 2px;
-  background: var(--sig-compute);
+.bar-icon {
+  width: 18px;
+  height: 18px;
   flex: none;
-  position: relative;
-}
-.bar-mark::after {
-  content: "";
-  position: absolute;
-  inset: 4px 3px;
-  border-radius: 1px;
-  background: var(--screen);
+  object-fit: contain;
 }
 
 .bar-title {

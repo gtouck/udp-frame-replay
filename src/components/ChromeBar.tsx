@@ -12,6 +12,8 @@ import { hasBlockingProblem, isActive, useStore } from "../store";
 import ThemeToggle from "./ThemeToggle";
 import WindowControls from "./WindowControls";
 
+const appIcon = new URL("../../src-tauri/icons/32x32.png", import.meta.url).href;
+
 /** 路径拆成目录与文件名两段：目录可以省略，文件名永远完整可见。 */
 const cut = (p: string) => Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
 const dirOf = (p: string) => (cut(p) < 0 ? "" : p.slice(0, cut(p) + 1));
@@ -73,7 +75,13 @@ export default function ChromeBar() {
     <header className="bar" data-tauri-drag-region>
       <ThemeToggle />
       <WindowControls />
-      <span className="bar-mark" data-tauri-drag-region aria-hidden />
+      <img
+        className="bar-icon"
+        src={appIcon}
+        alt=""
+        draggable={false}
+        data-tauri-drag-region
+      />
       <span className="bar-title" data-tauri-drag-region>
         数据帧回放
       </span>
