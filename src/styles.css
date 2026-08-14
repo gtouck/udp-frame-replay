@@ -46,6 +46,8 @@
   --warn-bg: rgba(232, 181, 74, 0.07);
   --current-bg: rgba(125, 224, 196, 0.09);
   --screen-inset: rgba(0, 0, 0, 0.6);
+  --scroll-thumb: rgba(107, 118, 132, 0.66);
+  --scroll-thumb-hover: rgba(201, 209, 219, 0.82);
 
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-label: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
@@ -88,6 +90,8 @@
   --warn-bg: rgba(154, 98, 6, 0.08);
   --current-bg: rgba(20, 124, 103, 0.1);
   --screen-inset: rgba(44, 58, 70, 0.12);
+  --scroll-thumb: rgba(94, 107, 120, 0.52);
+  --scroll-thumb-hover: rgba(43, 54, 64, 0.72);
 }
 
 * {
@@ -468,8 +472,13 @@ body {
 .config {
   grid-area: config;
   border-right: 1px solid var(--seam);
-  overflow-y: auto;
+  overflow: hidden;
+  min-height: 0;
   background: var(--chrome);
+}
+
+.config-scroll {
+  height: 100%;
 }
 
 .group {
@@ -887,10 +896,91 @@ body {
 /* 屏幕内沿高光：让数据区读起来是嵌进机身的显示屏 */
 .screen-body {
   flex: 1;
-  overflow: auto;
   min-height: 0;
   box-shadow: inset 0 1px 0 var(--screen-inset);
+}
+
+/* ── 跨平台悬浮滚动条 ───────────────────────────────────────
+   系统滚动条在 Windows 上可能占据 12–17px。这里保留原生滚动容器，
+   只隐藏其槽位并在内容上方绘制滑块，因此不会改变任何数据列的宽度。 */
+.overlay-scroll-area {
   position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.overlay-scroll-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.overlay-scroll-viewport::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.overlay-scrollbar {
+  position: absolute;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 120ms ease;
+}
+
+.overlay-scrollbar[data-axis="y"] {
+  top: 4px;
+  right: 3px;
+  bottom: 4px;
+  width: 8px;
+}
+
+.overlay-scrollbar[data-axis="x"] {
+  right: 4px;
+  bottom: 3px;
+  left: 4px;
+  height: 8px;
+}
+
+.overlay-scroll-thumb {
+  position: absolute;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  transition: background 100ms ease;
+  will-change: transform;
+}
+
+.overlay-scrollbar[data-axis="y"] .overlay-scroll-thumb {
+  right: 1px;
+  width: 5px;
+  min-height: 24px;
+}
+
+.overlay-scrollbar[data-axis="x"] .overlay-scroll-thumb {
+  bottom: 1px;
+  height: 5px;
+  min-width: 24px;
+}
+
+.overlay-scroll-area:hover
+  > .overlay-scrollbar[data-visible="true"],
+.overlay-scroll-area[data-scrolling="true"]
+  > .overlay-scrollbar[data-visible="true"],
+.overlay-scroll-area[data-dragging="true"]
+  > .overlay-scrollbar[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.overlay-scroll-thumb:hover,
+.overlay-scroll-area[data-dragging="true"] .overlay-scroll-thumb {
+  background: var(--scroll-thumb-hover);
 }
 
 .screen-empty {

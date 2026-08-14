@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { formatCount, hex2, type Span } from "../api";
 import { useStore } from "../store";
+import OverlayScrollArea from "./OverlayScrollArea";
 
 /** 每帧在视图里展示的字节数上限，超出的部分省略 */
 const SHOW_BYTES = 32;
@@ -70,7 +71,11 @@ export default function SendView() {
         </span>
       </header>
 
-      <div className="screen-body" ref={bodyRef} onScroll={onScroll}>
+      <OverlayScrollArea
+        className="screen-body"
+        ref={bodyRef}
+        onScroll={onScroll}
+      >
         {frames.length === 0 ? (
           <div className="screen-empty">
             {engine ? "等待第一帧…" : "开始发送后这里显示实际发出的字节"}
@@ -103,7 +108,7 @@ export default function SendView() {
             })}
           </div>
         )}
-      </div>
+      </OverlayScrollArea>
     </section>
   );
 }

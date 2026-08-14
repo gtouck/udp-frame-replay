@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { formatCount } from "../api";
 import { useStore } from "../store";
 import { usePreview } from "../usePreview";
+import OverlayScrollArea from "./OverlayScrollArea";
 
 const ROW_H = 22;
 
@@ -40,7 +41,7 @@ export default function SourceView() {
         </span>
       </header>
 
-      <div className="screen-body" ref={scrollRef}>
+      <OverlayScrollArea className="screen-body" ref={scrollRef}>
         {!file ? (
           <div className="screen-empty">打开一个数据文件开始</div>
         ) : (
@@ -76,7 +77,7 @@ export default function SourceView() {
             })}
           </div>
         )}
-      </div>
+      </OverlayScrollArea>
     </section>
   );
 }

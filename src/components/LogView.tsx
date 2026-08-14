@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { clearLog, formatClock, formatCount, type LogLevel } from "../api";
 import { useStore } from "../store";
+import OverlayScrollArea from "./OverlayScrollArea";
 
 const LEVEL_TEXT: Record<LogLevel, string> = {
   info: "信息",
@@ -60,7 +61,11 @@ export default function LogView() {
         </button>
       </header>
 
-      <div className="screen-body" ref={bodyRef} onScroll={onScroll}>
+      <OverlayScrollArea
+        className="screen-body"
+        ref={bodyRef}
+        onScroll={onScroll}
+      >
         {/* 解析错误按类型聚合。坏文件会有几百万条同类错误，逐条列出会把界面拖死。 */}
         {groups.length > 0 && (
           <div className="errgroups">
@@ -90,7 +95,7 @@ export default function LogView() {
             ))}
           </div>
         )}
-      </div>
+      </OverlayScrollArea>
     </section>
   );
 }
