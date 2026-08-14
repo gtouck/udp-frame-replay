@@ -13,6 +13,8 @@
    四个信号色各自只表示一件事，是语义不是装饰。
    ─────────────────────────────────────────────────────────────── */
 :root {
+  color-scheme: dark;
+
   --chrome: #14171c; /* 机身：配置面板、工具条 */
   --chrome-hi: #1b1f26; /* 机身受光面：输入框、悬停 */
   --screen: #0c0e12; /* 显示屏：数据区下沉底色 */
@@ -31,12 +33,61 @@
   --sig-error: #f0715e; /* 错误 */
   --sig-live: #7de0c4; /* 运行中指示 */
 
+  --bar-top: #181c22;
+  --button-hover: #222731;
+  --danger-border: #3a2b2b;
+  --insert-border: #23453a;
+  --compute-border: #24354d;
+  --warn-border: #3d3520;
+  --row-hover: #12151b;
+  --row-divider: #171b22;
+  --error-bg: rgba(240, 113, 94, 0.06);
+  --error-bg-faint: rgba(240, 113, 94, 0.05);
+  --warn-bg: rgba(232, 181, 74, 0.07);
+  --current-bg: rgba(125, 224, 196, 0.09);
+  --screen-inset: rgba(0, 0, 0, 0.6);
+
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-label: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 
   --r: 3px; /* 仪器的圆角很紧 */
   --row-h: 22px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --chrome: #edf1f4;
+  --chrome-hi: #ffffff;
+  --screen: #f9fbfc;
+  --seam: #d4dce3;
+  --seam-lit: #aebac5;
+
+  --ink: #2b3640;
+  --ink-bright: #101820;
+  --ink-dim: #5e6b78;
+  --ink-faint: #7f8c99;
+
+  --sig-insert: #16845e;
+  --sig-replace: #9a6206;
+  --sig-compute: #246eb7;
+  --sig-error: #c84438;
+  --sig-live: #147c67;
+
+  --bar-top: #f8fafb;
+  --button-hover: #e2e8ed;
+  --danger-border: #e9c8c5;
+  --insert-border: #acd8c7;
+  --compute-border: #b7d0e8;
+  --warn-border: #d9c796;
+  --row-hover: #edf2f5;
+  --row-divider: #e1e7ec;
+  --error-bg: rgba(200, 68, 56, 0.08);
+  --error-bg-faint: rgba(200, 68, 56, 0.05);
+  --warn-bg: rgba(154, 98, 6, 0.08);
+  --current-bg: rgba(20, 124, 103, 0.1);
+  --screen-inset: rgba(44, 58, 70, 0.12);
 }
 
 * {
@@ -91,7 +142,7 @@ body {
   gap: 10px;
   padding: 0 10px;
   border-bottom: 1px solid var(--seam);
-  background: linear-gradient(180deg, #181c22 0%, var(--chrome) 100%);
+  background: linear-gradient(180deg, var(--bar-top) 0%, var(--chrome) 100%);
   position: relative;
   z-index: 10;
   cursor: default;
@@ -120,6 +171,38 @@ body {
   letter-spacing: 0.06em;
   color: var(--ink);
   flex: none;
+}
+
+/* 主题切换属于窗口级操作，固定在业务按钮与窗口控制之间。 */
+.theme-toggle {
+  order: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  color: var(--ink-bright);
+  background: var(--chrome-hi);
+  border-color: var(--seam);
+}
+
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ── 融合式窗口控制 ───────────────────────────────────────── */
@@ -365,7 +448,7 @@ body {
 }
 .btn:hover:not(:disabled) {
   border-color: var(--seam-lit);
-  background: #222731;
+  background: var(--button-hover);
 }
 .btn:disabled {
   color: var(--ink-faint);
@@ -378,7 +461,7 @@ body {
 }
 .btn[data-danger="true"]:not(:disabled) {
   color: var(--sig-error);
-  border-color: #3a2b2b;
+  border-color: var(--danger-border);
 }
 
 /* ── 配置面板 ─────────────────────────────────────────────── */
@@ -407,11 +490,11 @@ body {
   border-left: 2px solid transparent;
 }
 .problem[data-severity="error"] {
-  background: rgba(240, 113, 94, 0.07);
+  background: var(--error-bg);
   border-left-color: var(--sig-error);
 }
 .problem[data-severity="warn"] {
-  background: rgba(232, 181, 74, 0.06);
+  background: var(--warn-bg);
   border-left-color: var(--sig-replace);
 }
 
@@ -719,11 +802,11 @@ body {
 }
 .stage-tag[data-stage="1"] {
   color: var(--sig-insert);
-  border-color: #23453a;
+  border-color: var(--insert-border);
 }
 .stage-tag[data-stage="2"] {
   color: var(--sig-compute);
-  border-color: #24354d;
+  border-color: var(--compute-border);
 }
 
 .rule-move {
@@ -748,8 +831,8 @@ body {
   margin: 0;
   padding: 6px 8px;
   border-radius: var(--r);
-  border: 1px solid #3d3520;
-  background: rgba(232, 181, 74, 0.07);
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
   color: var(--sig-replace);
   font-size: 11px;
   line-height: 1.5;
@@ -806,7 +889,7 @@ body {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 var(--screen-inset);
   position: relative;
 }
 
@@ -838,13 +921,13 @@ body {
   padding-right: 10px;
 }
 .row:hover {
-  background: #12151b;
+  background: var(--row-hover);
 }
 .row[data-error="true"] {
-  background: rgba(240, 113, 94, 0.06);
+  background: var(--error-bg);
 }
 .row[data-current="true"] {
-  background: rgba(125, 224, 196, 0.09);
+  background: var(--current-bg);
 }
 
 .row-no {
@@ -854,7 +937,7 @@ body {
   text-align: right;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
-  border-right: 1px solid #171b22;
+  border-right: 1px solid var(--row-divider);
   margin-right: 10px;
 }
 
@@ -1044,7 +1127,7 @@ body {
   padding-right: 10px;
 }
 .dump-row:hover {
-  background: #12151b;
+  background: var(--row-hover);
 }
 
 .dump-line {
@@ -1054,7 +1137,7 @@ body {
   text-align: right;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
-  border-right: 1px solid #171b22;
+  border-right: 1px solid var(--row-divider);
   margin-right: 10px;
 }
 
@@ -1133,7 +1216,7 @@ body {
   align-items: baseline;
 }
 .logline:hover {
-  background: #12151b;
+  background: var(--row-hover);
 }
 
 .log-time {
@@ -1166,7 +1249,7 @@ body {
 /* 解析错误聚合条：一类一行，不是一行一条 */
 .errgroups {
   border-bottom: 1px solid var(--seam);
-  background: rgba(240, 113, 94, 0.05);
+  background: var(--error-bg-faint);
 }
 
 .errgroup {

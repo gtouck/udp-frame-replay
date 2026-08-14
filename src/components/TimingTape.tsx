@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { THEME_CHANGE_EVENT } from "../theme";
 
 interface Props {
   /** 最近若干次的实际帧间隔，单位微秒。空数组表示尚未发送。 */
@@ -16,6 +17,13 @@ interface Props {
  */
 export default function TimingTape({ samples, targetUs }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [themeRevision, setThemeRevision] = useState(0);
+
+  useEffect(() => {
+    const redraw = () => setThemeRevision((revision) => revision + 1);
+    window.addEventListener(THEME_CHANGE_EVENT, redraw);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, redraw);
+  }, []);
 
   useEffect(() => {
     const cv = ref.current;
@@ -66,7 +74,7 @@ export default function TimingTape({ samples, targetUs }: Props) {
       ctx.lineTo(x, baseY - tick);
       ctx.stroke();
     }
-  }, [samples, targetUs]);
+  }, [samples, targetUs, themeRevision]);
 
   return (
     <canvas

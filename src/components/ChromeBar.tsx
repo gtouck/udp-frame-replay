@@ -9,6 +9,7 @@ import {
   stopSend,
 } from "../api";
 import { hasBlockingProblem, isActive, useStore } from "../store";
+import ThemeToggle from "./ThemeToggle";
 import WindowControls from "./WindowControls";
 
 /** 路径拆成目录与文件名两段：目录可以省略，文件名永远完整可见。 */
@@ -70,6 +71,7 @@ export default function ChromeBar() {
 
   return (
     <header className="bar" data-tauri-drag-region>
+      <ThemeToggle />
       <WindowControls />
       <span className="bar-mark" data-tauri-drag-region aria-hidden />
       <span className="bar-title" data-tauri-drag-region>
