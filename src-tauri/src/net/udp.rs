@@ -48,8 +48,17 @@ pub enum SendFail {
     Io(io::ErrorKind),
 }
 
+/// 每包的投递方式。单播与组播必须分开处理，理由见 `UdpSender::build`。
+enum Dispatch {
+    /// 已 connect，每包 `send`
+    Connected,
+    /// 未 connect，每包 `send_to`
+    To(SockAddr),
+}
+
 pub struct UdpSender {
     socket: Socket,
+    dispatch: Dispatch,
     /// 目标描述，供界面与日志展示
     pub description: String,
 }
@@ -81,23 +90,45 @@ impl UdpSender {
             let _ = socket.set_send_buffer_size(sz);
         }
 
-        if let TargetKind::Multicast {
-            interface,
-            ttl,
-            loopback,
-            ..
-        } = &cfg.kind
-        {
-            configure_multicast(&socket, dest, interface.as_deref(), *ttl, *loopback)?;
-        }
+        let dispatch = match &cfg.kind {
+            TargetKind::Multicast {
+                interface,
+                ttl,
+                loopback,
+                ..
+            } => {
+                configure_multicast(&socket, dest, interface.as_deref(), *ttl, *loopback)?;
 
-        // connect 之后用 send 而非 send_to：省去每包重复的地址解析，
-        // 并且能收到 ICMP 端口不可达转成的 ECONNREFUSED。
-        socket.connect(&SockAddr::from(dest))?;
+                // 组播绝不能 connect，两个原因：
+                //
+                // 1. connect 做的是**单播**路由查找，完全不看 IP_MULTICAST_IF。
+                //    出站网卡本该由上面的 set_multicast_if_v4 决定，connect 却会
+                //    把路由按单播规则定死并缓存下来，之后再改 IP_MULTICAST_IF 也没用。
+                //
+                // 2. BSD/macOS 上，已 connect 的 UDP 套接字发送失败时错误会被闩存进
+                //    so_error，下一次 send 统一返回 EPIPE —— 真实原因（无路由、网卡
+                //    不可用、macOS 本地网络权限未授予都会报 EHOSTUNREACH）被替换成
+                //    一个毫无信息量的 BrokenPipe，日志上完全无从下手。
+                //
+                // 不 connect 改用 send_to，两个问题一起消失：错误码是真的，
+                // 且换到可用网卡后立刻恢复。ECONNREFUSED 那点好处对组播本就不成立
+                // —— 组播没有单一对端，谈不上"端口不可达"。
+                Dispatch::To(SockAddr::from(dest))
+            }
+
+            // 单播保留 connect：省去每包重复的地址解析，
+            // 并且能收到 ICMP 端口不可达转成的 ECONNREFUSED。
+            TargetKind::Unicast { .. } => {
+                socket.connect(&SockAddr::from(dest))?;
+                Dispatch::Connected
+            }
+        };
+
         socket.set_nonblocking(true)?;
 
         Ok(UdpSender {
             socket,
+            dispatch,
             description: describe(&cfg.kind, dest),
         })
     }
@@ -106,7 +137,11 @@ impl UdpSender {
     pub fn send(&self, buf: &[u8], retries: u32) -> Result<usize, SendFail> {
         let mut attempt = 0;
         loop {
-            match self.socket.send(buf) {
+            let result = match &self.dispatch {
+                Dispatch::Connected => self.socket.send(buf),
+                Dispatch::To(dest) => self.socket.send_to(buf, dest),
+            };
+            match result {
                 Ok(n) => return Ok(n),
                 Err(e) => match e.kind() {
                     io::ErrorKind::WouldBlock => {
@@ -127,6 +162,11 @@ impl UdpSender {
 
     pub fn local_addr(&self) -> Option<SocketAddr> {
         self.socket.local_addr().ok().and_then(|a| a.as_socket())
+    }
+
+    /// 已 connect 的对端地址；未 connect（组播）时为 `None`。
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.socket.peer_addr().ok().and_then(|a| a.as_socket())
     }
 }
 
@@ -281,6 +321,37 @@ mod tests {
     fn builds_multicast_socket() {
         let s = UdpSender::build(&multicast("239.255.0.1", 19001)).unwrap();
         assert!(s.description.starts_with("组播 →"));
+    }
+
+    /// 组播绝不能 connect：connect 的路由查找不看 `IP_MULTICAST_IF`，
+    /// 而且 BSD/macOS 会把发送失败闩存进 `so_error`，之后每次 send 都返回
+    /// EPIPE（BrokenPipe），真实错误被彻底掩盖。
+    #[test]
+    fn multicast_socket_is_not_connected() {
+        let s = UdpSender::build(&multicast("239.255.0.1", 19010)).unwrap();
+        assert!(s.peer_addr().is_none(), "组播套接字不应 connect");
+    }
+
+    /// 单播保留 connect：能把 ICMP 端口不可达转成 ECONNREFUSED，这对单播有意义。
+    #[test]
+    fn unicast_socket_is_connected() {
+        let s = UdpSender::build(&unicast("127.0.0.1", 19011)).unwrap();
+        assert_eq!(s.peer_addr().map(|a| a.port()), Some(19011));
+    }
+
+    /// 回归：组播发送失败时必须报出真实原因。
+    /// 组播能不能发出去取决于运行环境（macOS 本地网络权限、路由、网卡），
+    /// 所以这里只断言"要么成功，要么给出真实错误"——唯独不能是 BrokenPipe。
+    #[test]
+    fn multicast_failure_is_not_masked_as_broken_pipe() {
+        let s = UdpSender::build(&multicast("239.255.0.1", 19012)).unwrap();
+        if let Err(SendFail::Io(kind)) = s.send(&[0xAA; 32], 3) {
+            assert_ne!(
+                kind,
+                io::ErrorKind::BrokenPipe,
+                "BrokenPipe 说明真实错误被 connect 掩盖了"
+            );
+        }
     }
 
     #[test]
