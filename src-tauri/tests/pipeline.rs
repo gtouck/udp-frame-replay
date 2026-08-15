@@ -27,6 +27,12 @@ fn cfg(encoding: TextEncoding) -> ParseConfig {
     }
 }
 
+/// 用来断言"普通行"的样本行号。
+///
+/// 不用第 1 行 —— 它和第 6 行被特意加长成几百字节，是留给界面横向滚动条用的
+/// 样本。解析规则的断言绑在那两行上，界面一调宽度就会连带弄坏解析测试。
+const NORMAL_LINE: usize = 2;
+
 /// 解析第 `line_no` 行（1-based），返回三段文本与解码结果
 fn parse_at(
     src: &DataSource,
@@ -60,15 +66,15 @@ fn normal_line_strips_prefix_and_decodes() {
     let src = DataSource::open(&testdata("sample-utf8.txt")).unwrap();
     let c = cfg(TextEncoding::Utf8);
 
-    let (prefix, data, trailing, bytes, err) = parse_at(&src, &c, 1);
+    let (prefix, data, trailing, bytes, err) = parse_at(&src, &c, NORMAL_LINE);
 
-    assert_eq!(prefix, "[RX] 000001 发送 ");
-    assert_eq!(data, "18 25 30 BB 1D 6D 13 2C DE D6 23 7B");
+    assert_eq!(prefix, "[TX] 000002 接收 ");
+    assert_eq!(data, "3F 72 1F CB 19 71 17 44");
     assert_eq!(trailing, "");
     assert_eq!(err, None);
     assert_eq!(
         bytes,
-        vec![0x18, 0x25, 0x30, 0xBB, 0x1D, 0x6D, 0x13, 0x2C, 0xDE, 0xD6, 0x23, 0x7B]
+        vec![0x3F, 0x72, 0x1F, 0xCB, 0x19, 0x71, 0x17, 0x44]
     );
 }
 
@@ -137,10 +143,10 @@ fn gbk_file_read_as_utf8_produces_garbage_but_does_not_panic() {
     let wrong = cfg(TextEncoding::Utf8);
 
     // 编码选错时汉字变成替换字符，但字段数不变，数据体仍能正确取出
-    let (_, data, _, bytes, err) = parse_at(&gbk, &wrong, 1);
+    let (_, data, _, bytes, err) = parse_at(&gbk, &wrong, NORMAL_LINE);
     assert_eq!(err, None);
-    assert_eq!(data, "18 25 30 BB 1D 6D 13 2C DE D6 23 7B");
-    assert_eq!(bytes.len(), 12);
+    assert_eq!(data, "3F 72 1F CB 19 71 17 44");
+    assert_eq!(bytes.len(), 8);
 }
 
 #[test]
@@ -148,19 +154,19 @@ fn char_mode_offset_lands_on_character_boundary() {
     let src = DataSource::open(&testdata("sample-utf8.txt")).unwrap();
     let c = ParseConfig {
         encoding: TextEncoding::Utf8,
-        // "[RX] 000001 发送 " 共 15 个字符（两个汉字各算一个）
+        // "[TX] 000002 接收 " 共 15 个字符（两个汉字各算一个）
         prefix: PrefixRule::Chars { skip_chars: 15 },
         hex: Default::default(),
     };
 
-    let (prefix, data, _, bytes, err) = parse_at(&src, &c, 1);
-    assert_eq!(prefix, "[RX] 000001 发送 ");
+    let (prefix, data, _, bytes, err) = parse_at(&src, &c, NORMAL_LINE);
+    assert_eq!(prefix, "[TX] 000002 接收 ");
     assert_eq!(prefix.chars().count(), 15);
     // 15 个字符对应 19 个字节 —— 按字节跳过会把汉字切碎
     assert_eq!(prefix.len(), 19);
     assert_eq!(err, None);
-    assert_eq!(data, "18 25 30 BB 1D 6D 13 2C DE D6 23 7B");
-    assert_eq!(bytes.len(), 12);
+    assert_eq!(data, "3F 72 1F CB 19 71 17 44");
+    assert_eq!(bytes.len(), 8);
 }
 
 #[test]
