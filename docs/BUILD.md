@@ -71,6 +71,32 @@ failed to bundle project: error running bundle_dmg.sh
 npm run tauri build -- --bundles app
 ```
 
+### macOS 的本地网络权限
+
+macOS 15 起有「本地网络隐私」：未授权的 App 发往同一局域网的流量**全部**被拦，
+组播、广播、局域网单播一律返回 `EHOSTUNREACH`（errno 65）。能上公网却发不到
+网关，就是这个原因 —— 不是路由问题，也不是代码问题。
+
+`src-tauri/Info.plist` 声明了 `NSLocalNetworkUsageDescription`，Tauri 打包时会
+自动发现 `tauri.conf.json` 同目录下的这个文件并合并（不需要在 `tauri.conf.json`
+里配置）。有了它，系统才会弹授权框，App 才会出现在
+系统设置 → 隐私与安全性 → 本地网络 的列表里。
+
+验证是否合并成功：
+
+```bash
+plutil -p "src-tauri/target/release/bundle/macos/数据帧回放工具.app/Contents/Info.plist" \
+  | grep NSLocalNetwork
+```
+
+两个坑：
+
+- **`tauri dev` 下拿不到这个权限**。dev 模式跑的是裸二进制，没有 app bundle
+  也就没有 Info.plist。要验证组播必须 `tauri build` 后运行 `.app`。
+- **ad-hoc 签名的 App 权限不持久**。默认构建出来是 `Signature=adhoc`
+  （`codesign -dvvv` 可查），系统按 cdhash 认 App，每次重新构建都会变，
+  已授予的权限随之失效。要权限稳定就得用 Developer ID 证书签名，见下面「签名」。
+
 ### 跨平台构建
 
 Tauri 不支持跨平台交叉编译 —— 每个平台的包都要在对应系统上构建。

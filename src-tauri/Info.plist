@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS 专用的 Info.plist 追加项。Tauri 打包时会自动发现 tauri.conf.json 同目录下的
+  这个文件，并把它合并进生成的 Info.plist，不需要在 tauri.conf.json 里另外配置。
+
+  只在 `tauri build` 产出的 .app 里生效 —— `tauri dev` 直接跑裸二进制，没有 app
+  bundle 也就没有 Info.plist，本地网络权限在 dev 模式下拿不到。要验证组播必须走打包。
+-->
+<plist version="1.0">
+<dict>
+	<!--
+	  macOS 15+ 的「本地网络隐私」会拦截 App 发往同一局域网的所有流量，
+	  组播、广播、局域网单播全都返回 EHOSTUNREACH（errno 65）。
+	  只有声明了这个键，系统才会弹出授权对话框、App 才会出现在
+	  「系统设置 › 隐私与安全性 › 本地网络」列表里让用户手动开启。
+
+	  这里的文案就是授权对话框上显示给用户的内容。
+	-->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>需要访问本地网络，才能把数据帧通过 UDP 单播或组播发送到同一网络内的设备。</string>
+</dict>
+</plist>
