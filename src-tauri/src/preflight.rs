@@ -155,7 +155,8 @@ fn check_target(cfg: &SendConfig, engine_active: bool, out: &mut Vec<Problem>) {
     }
 
     if let TargetKind::Multicast { interface, ttl, .. } = &cfg.target.kind {
-        let unset = interface.as_deref().is_none_or(|s| s.trim().is_empty());
+        // 不用 is_none_or：那是 1.82 才稳定的 API，crate 声明的 MSRV 是 1.77
+        let unset = interface.as_deref().map_or(true, |s| s.trim().is_empty());
         if unset && crate::net::list_interfaces().iter().filter(|i| !i.is_loopback).count() > 1 {
             out.push(Problem::warn(
                 "发送目标",
