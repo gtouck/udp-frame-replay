@@ -74,6 +74,7 @@ export default function StatusBar() {
             label="速率"
             value={`${formatCount(Math.round(rate))}/s`}
             width={12}
+            title="最近一秒实测的平均发送速率，每秒刷新一次"
           />
           <Readout
             label="抖动"
