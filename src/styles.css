@@ -168,8 +168,9 @@ body {
   flex: none;
 }
 
-/* 主题切换属于窗口级操作，固定在业务按钮与窗口控制之间。 */
-.theme-toggle {
+/* 主题切换与帮助属于窗口级操作，固定在业务按钮与窗口控制之间。 */
+.theme-toggle,
+.help-btn {
   order: 1;
   display: grid;
   place-items: center;
@@ -184,13 +185,15 @@ body {
   cursor: pointer;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.help-btn:hover {
   color: var(--ink-bright);
   background: var(--chrome-hi);
   border-color: var(--seam);
 }
 
-.theme-toggle svg {
+.theme-toggle svg,
+.help-btn svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -1099,6 +1102,14 @@ body {
   color: var(--sig-error);
 }
 
+.readout-val[data-clip="true"] {
+  max-width: 48ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
 .status-spacer {
   flex: 1;
 }
@@ -1361,4 +1372,211 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── 速查卡 ───────────────────────────────────────────────── */
+
+.help-btn {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* 面板本身仍是机身色：速查卡是仪器的一部分，不是浮在上面的网页弹窗 */
+.help-card {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 100%;
+  background: var(--chrome);
+  border: 1px solid var(--seam-lit);
+  border-radius: var(--r);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.help-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--seam);
+  background: linear-gradient(180deg, var(--bar-top) 0%, var(--chrome) 100%);
+}
+
+.help-title {
+  flex: 1;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.help-body {
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+  user-select: text;
+}
+
+.help-sec {
+  padding-top: 14px;
+}
+
+.help-sec + .help-sec {
+  border-top: 1px solid var(--row-divider);
+}
+
+.help-sec h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.help-sec p {
+  margin: 0;
+  color: var(--ink);
+}
+
+.help-sec b {
+  font-weight: 500;
+  color: var(--ink-bright);
+}
+
+.help-sec code {
+  font: 400 12px/1 var(--font-data);
+  color: var(--ink-bright);
+}
+
+.help-steps {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.help-steps li + li {
+  margin-top: 5px;
+}
+
+.help-fig {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font: 400 12px/1.45 var(--font-data);
+  color: var(--ink-bright);
+  background: var(--screen);
+  border: 1px solid var(--seam);
+  border-radius: var(--r);
+}
+
+.help-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px 12px;
+  margin: 0;
+}
+
+.help-dl dt {
+  font-weight: 500;
+  color: var(--ink-bright);
+}
+
+.help-dl dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .help-dl {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .help-dl dd {
+    margin-bottom: 6px;
+  }
+}
+
+/* ── 最近打开的文件 ───────────────────────────────────────── */
+
+.recent {
+  position: relative;
+  flex: none;
+}
+
+.btn-caret {
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* 点空白处关菜单。铺满全窗口，但压在菜单下面。 */
+.recent-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.recent-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 21;
+  min-width: 260px;
+  max-width: 460px;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: var(--chrome-hi);
+  border: 1px solid var(--seam-lit);
+  border-radius: var(--r);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+
+.recent-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 7px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+
+.recent-item:hover {
+  background: var(--button-hover);
+  color: var(--ink-bright);
+}
+
+.recent-name {
+  flex: none;
+}
+
+/* 目录只是用来区分同名文件的，挤不下就从头截断，保留最靠近文件的那几层 */
+.recent-dir {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 11px;
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

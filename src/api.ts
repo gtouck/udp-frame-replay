@@ -286,6 +286,14 @@ export interface Problem {
   message: string;
 }
 
+// ── 解析规则推测 ────────────────────────────────────────────
+
+export interface Guess {
+  config: ParseConfig;
+  /** 说给使用者听的一句话，讲清楚软件替他做了什么决定 */
+  summary: string;
+}
+
 // ── 配置档 ──────────────────────────────────────────────────
 
 export interface Profile {
@@ -308,6 +316,10 @@ export const preview = (
   config: ParseConfig,
   filter: FilterConfig,
 ) => invoke<LinePreview[]>("preview", { start, count, config, filter });
+
+/** 按已打开文件的实际内容推测解析规则。推不出来时返回 null。 */
+export const guessParse = (config: ParseConfig) =>
+  invoke<Guess | null>("guess_parse", { config });
 
 export const networkInterfaces = () =>
   invoke<InterfaceInfo[]>("network_interfaces");

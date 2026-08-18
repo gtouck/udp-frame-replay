@@ -1,6 +1,7 @@
 pub mod config;
 pub mod engine;
 pub mod filter;
+pub mod guess;
 pub mod log;
 pub mod mutate;
 pub mod net;
@@ -22,6 +23,7 @@ pub fn run() {
             commands::close_file,
             commands::file_info,
             commands::preview,
+            commands::guess_parse,
             commands::network_interfaces,
             commands::start_send,
             commands::pause_send,

@@ -6,10 +6,12 @@ import SourceView from "./components/SourceView";
 import StatusBar from "./components/StatusBar";
 import { useEnginePolling } from "./useEnginePolling";
 import { usePreflight } from "./usePreflight";
+import { useSessionPersist } from "./useSessionPersist";
 
 export default function App() {
   useEnginePolling();
   usePreflight();
+  useSessionPersist();
 
   return (
     <div className="app">

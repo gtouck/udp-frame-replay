@@ -135,6 +135,22 @@
               return rows;
             }
 
+            // 桩件里的样本数据前缀固定是「[TX] 000123 发送 」，直接给出对应答案
+            case "guess_parse":
+              return {
+                config: {
+                  ...args.config,
+                  encoding: "utf8",
+                  prefix: {
+                    mode: "fields",
+                    delimiter: { kind: "whitespace" },
+                    collapse: true,
+                    skipFields: 3,
+                  },
+                },
+                summary: "已按文件内容推测：UTF-8，按空白丢弃行首 3 个字段",
+              };
+
             case "network_interfaces":
               return [
                 { name: "en0", ip: "192.168.1.42", isLoopback: false },

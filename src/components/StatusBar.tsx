@@ -17,12 +17,15 @@ function Readout({
   width,
   alert,
   title,
+  clip,
 }: {
   label: string;
   value: string;
   width?: number;
   alert?: boolean;
   title?: string;
+  /** 长度不可控的文本：截断显示，完整内容挂在 title 上 */
+  clip?: boolean;
 }) {
   return (
     <div className="readout" title={title}>
@@ -30,6 +33,7 @@ function Readout({
       <span
         className="readout-val"
         data-alert={alert ? "true" : undefined}
+        data-clip={clip ? "true" : undefined}
         style={
           width ? ({ "--w": `${width}ch` } as React.CSSProperties) : undefined
         }
@@ -150,7 +154,15 @@ export default function StatusBar() {
         <Readout label="文件" value="未打开" />
       )}
 
-      {notice && <Readout label="提示" value={notice} alert />}
+      {notice && (
+        <Readout
+          label="提示"
+          value={notice.text}
+          title={notice.text}
+          alert={notice.level === "error"}
+          clip
+        />
+      )}
 
       <span className="status-spacer" />
 

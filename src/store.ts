@@ -1,11 +1,6 @@
 import { create } from "zustand";
 import {
-  defaultFilterConfig,
-  defaultMutationConfig,
   newMutationOp,
-  defaultPacingConfig,
-  defaultParseConfig,
-  defaultTargetConfig,
   type Condition,
   type EngineSnapshot,
   type ErrorGroup,
@@ -25,6 +20,7 @@ import {
   type SentFrame,
   type TargetConfig,
 } from "./api";
+import { restoreConfig } from "./session";
 
 interface AppStore {
   file: FileInfo | null;
@@ -89,8 +85,9 @@ interface AppStore {
   /** 载入配置档时整体替换五部分配置 */
   applyConfig: (c: SendConfig) => void;
 
-  notice: string | null;
-  setNotice: (m: string | null) => void;
+  /** 状态栏上的一句话。默认按错误处理 —— 大多数调用点传的都是异常。 */
+  notice: { text: string; level: "info" | "error" } | null;
+  setNotice: (text: string | null, level?: "info" | "error") => void;
 }
 
 const newCondition = (kind: Condition["kind"]): Condition =>
@@ -98,13 +95,19 @@ const newCondition = (kind: Condition["kind"]): Condition =>
     ? { kind: "field", index: 0, op: "equals", value: "" }
     : { kind: "bytes", offset: 0, value: "", mask: null };
 
+/**
+ * 上次退出时的配置。读一次就够 —— 之后一切以内存里的状态为准，
+ * 由 `useSessionPersist` 单向写回。
+ */
+const restored = restoreConfig();
+
 export const useStore = create<AppStore>((set) => ({
   file: null,
   setFile: (file) => set({ file }),
 
-  parse: defaultParseConfig(),
-  filter: defaultFilterConfig(),
-  mutate: defaultMutationConfig(),
+  parse: restored.parse,
+  filter: restored.filter,
+  mutate: restored.mutate,
   previewVersion: 0,
 
   setParse: (patch) =>
@@ -225,7 +228,7 @@ export const useStore = create<AppStore>((set) => ({
   removeMutationRule: (i) =>
     set((s) => ({ mutate: { rules: s.mutate.rules.filter((_, j) => j !== i) } })),
 
-  target: defaultTargetConfig(),
+  target: restored.target,
   setTarget: (patch) =>
     set((s) => ({ target: { ...s.target, ...patch } as TargetConfig })),
 
@@ -252,7 +255,7 @@ export const useStore = create<AppStore>((set) => ({
       return { target };
     }),
 
-  pacing: defaultPacingConfig(),
+  pacing: restored.pacing,
   setPacing: (patch) => set((s) => ({ pacing: { ...s.pacing, ...patch } })),
 
   engine: null,
@@ -288,8 +291,18 @@ export const useStore = create<AppStore>((set) => ({
     })),
 
   notice: null,
-  setNotice: (notice) => set({ notice }),
+  setNotice: (text, level = "error") =>
+    set({ notice: text === null ? null : { text, level } }),
 }));
+
+/** 把散在 store 里的五部分配置凑成后端要的整体 */
+export const configOf = (s: AppStore): SendConfig => ({
+  parse: s.parse,
+  filter: s.filter,
+  mutate: s.mutate,
+  target: s.target,
+  pacing: s.pacing,
+});
 
 /** 有阻止启动的问题吗 */
 export const hasBlockingProblem = (problems: Problem[]) =>

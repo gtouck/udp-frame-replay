@@ -1,4 +1,5 @@
-import type { Delimiter, TextEncoding } from "../../api";
+import { useState } from "react";
+import { guessParse, type Delimiter, type TextEncoding } from "../../api";
 import { useStore } from "../../store";
 import { Check, Field, Hint, NumberField, Segments, TextField } from "./Field";
 
@@ -8,11 +9,52 @@ export default function ParseSection() {
   const setPrefix = useStore((s) => s.setPrefix);
   const setPrefixMode = useStore((s) => s.setPrefixMode);
   const setSkipChars = useStore((s) => s.setSkipChars);
+  const file = useStore((s) => s.file);
+  const setNotice = useStore((s) => s.setNotice);
+
+  const [guessing, setGuessing] = useState(false);
 
   const prefix = parse.prefix;
 
+  /**
+   * 打开文件时只在使用者没配过的情况下自动推测；这里是随时可用的手动入口 ——
+   * 换一批格式不同的数据，或者被自己改乱了，按一下就能回到能用的状态。
+   */
+  async function guess() {
+    setGuessing(true);
+    try {
+      const g = await guessParse(parse);
+      if (g) {
+        setParse(g.config);
+        setNotice(g.summary, "info");
+      } else {
+        setNotice("按行首前缀怎么切都解不出数据，可能要改用「按字符跳过」或换编码。", "info");
+      }
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setGuessing(false);
+    }
+  }
+
   return (
     <>
+      <div className="rule-add">
+        <button
+          className="btn btn-slim"
+          onClick={guess}
+          disabled={!file || guessing}
+          title={file ? undefined : "先打开一个数据文件"}
+        >
+          {guessing ? "推测中…" : "自动推测"}
+        </button>
+      </div>
+
+      <Hint>
+        按文件开头几十行的实际内容，推测编码和该丢掉的行首字段数。
+        推错了直接改下面的选项。
+      </Hint>
+
       <Field label="编码" htmlFor="cfg-enc">
         <select
           id="cfg-enc"

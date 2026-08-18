@@ -8,6 +8,7 @@ use tauri::State;
 use crate::config::{FilterConfig, ParseConfig, Profile, SendConfig};
 use crate::engine::{Engine, EngineSnapshot, SentFrame};
 use crate::filter::CompiledFilter;
+use crate::guess::Guess;
 use crate::log::{ErrorGroup, LogEntry};
 use crate::net::{list_interfaces, InterfaceInfo};
 use crate::preflight::{self, Problem};
@@ -282,4 +283,11 @@ pub fn load_profile(path: String, state: State<'_, AppState>) -> Result<Profile,
         serde_json::from_str(&text).map_err(|e| format!("{path} 不是有效的配置档：{e}"))?;
     state.log.info(format!("已载入配置档 {} · {}", profile.name, path));
     Ok(profile)
+}
+
+/// 按当前文件的内容推测解析规则。没打开文件、或者怎么切都解不出数据时返回 `None`。
+#[tauri::command]
+pub fn guess_parse(config: ParseConfig, state: State<'_, AppState>) -> Option<Guess> {
+    let guard = state.source.read();
+    crate::guess::guess_parse(guard.as_ref()?, &config)
 }
