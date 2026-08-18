@@ -449,6 +449,18 @@ export const formatCount = (n: number) => n.toLocaleString("en-US");
 export const hex2 = (b: number) =>
   b.toString(16).toUpperCase().padStart(2, "0");
 
+/**
+ * 发送速率，帧/秒。
+ *
+ * 低速段保留一位小数：2 秒一帧是 0.5 帧/秒，四舍五入成整数就成了 0 ——
+ * 明明在发，读数却说没发。高速段小数位没有意义，整数加千位分隔更好认。
+ */
+export function formatRate(r: number): string {
+  if (r === 0) return "0";
+  if (r < 10) return r.toFixed(1);
+  return formatCount(Math.round(r));
+}
+
 /** 微秒转成人读的量纲，保持窄宽度便于放进读数栏 */
 export function formatUs(us: number): string {
   if (us < 1000) return `${us}μs`;

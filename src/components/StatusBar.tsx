@@ -1,4 +1,4 @@
-import { formatBytes, formatCount, formatUs } from "../api";
+import { formatBytes, formatCount, formatRate, formatUs } from "../api";
 import { useStore } from "../store";
 import TimingTape from "./TimingTape";
 
@@ -72,9 +72,9 @@ export default function StatusBar() {
           />
           <Readout
             label="速率"
-            value={`${formatCount(Math.round(rate))}/s`}
+            value={`${formatRate(rate)}/s`}
             width={12}
-            title="最近一秒实测的平均发送速率，每秒刷新一次"
+            title="实测平均发送速率，每秒刷新一次。帧太稀时窗口自动拉长到最多 5 秒"
           />
           <Readout
             label="抖动"

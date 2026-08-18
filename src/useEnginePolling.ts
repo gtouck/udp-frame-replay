@@ -27,7 +27,24 @@ const LOG_CAP = 2000;
  */
 const RATE_WINDOW_MS = 1000;
 
-/** 头一个读数用短窗口先给出来，免得刚开始发送的一秒里显示 0，看着像没发出去 */
+/**
+ * 一个窗口里至少要攒够多少帧，攒不够就把窗口拉长。
+ *
+ * 一秒窗口在高速下绰绰有余，到了秒级间隔就不够看了：1 帧/秒时窗口里只有一帧，
+ * 多一帧少一帧就是 100% 的误差，读数在 0 和 1 之间来回跳。窗口里的帧数决定了
+ * 量化误差（约 1/N），攒够几帧才谈得上"平均速率"。
+ */
+const RATE_MIN_FRAMES = 5;
+
+/**
+ * 窗口拉长的上限。
+ *
+ * 再稀也不能无限等 —— 读数太旧就不再反映"现在"了。到了上限就按实际帧数出数，
+ * 哪怕只有一帧。
+ */
+const RATE_MAX_WINDOW_MS = 5000;
+
+/** 头一个读数用短窗口先给出来，免得刚开始发送的头几秒里显示 0，看着像没发出去 */
 const RATE_FIRST_MS = 200;
 
 /**
@@ -51,6 +68,8 @@ export function useEnginePolling() {
   const rateAnchor = useRef<{ at: number; frames: number } | null>(null);
   /** 本轮任务是否已经给出过读数 —— 决定用短窗口还是正常窗口 */
   const rateSettled = useRef(false);
+  /** 最近一次观察到帧数变化的时刻。窗口的收尾对齐到它，理由见 updateRate。 */
+  const rateLastChange = useRef<{ at: number; frames: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -89,12 +108,18 @@ export function useEnginePolling() {
       // 暂停、停止、结束都不该继续显示上一刻的速率
       if (!snap || snap.state !== "running") {
         rateAnchor.current = null;
+        rateLastChange.current = null;
         rateSettled.current = false;
         setRate(0);
         return;
       }
 
       const now = performance.now();
+
+      if (rateLastChange.current?.frames !== snap.sentFrames) {
+        rateLastChange.current = { at: now, frames: snap.sentFrames };
+      }
+
       const anchor = rateAnchor.current;
       if (!anchor) {
         rateAnchor.current = { at: now, frames: snap.sentFrames };
@@ -103,11 +128,36 @@ export function useEnginePolling() {
 
       // 窗口没走满就什么都不做：读数保持上一次的值，不跟着轮询跳
       const dt = now - anchor.at;
-      if (dt < (rateSettled.current ? RATE_WINDOW_MS : RATE_FIRST_MS)) return;
+      const frames = snap.sentFrames - anchor.frames;
 
-      setRate(Math.max(0, ((snap.sentFrames - anchor.frames) * 1000) / dt));
+      if (!rateSettled.current) {
+        // 还没出过读数：等到真有帧可算就先给一个。
+        // 秒级间隔下第一帧要过一秒才来，这时给出的 1 帧/1 秒已经是对的估计。
+        if (dt < RATE_FIRST_MS || frames === 0) return;
+      } else {
+        if (dt < RATE_WINDOW_MS) return;
+        // 帧太稀就继续攒，直到够数或撞上窗口上限
+        if (frames < RATE_MIN_FRAMES && dt < RATE_MAX_WINDOW_MS) return;
+      }
+
       rateSettled.current = true;
-      rateAnchor.current = { at: now, frames: snap.sentFrames };
+
+      // 窗口里一帧都没有：确实就是 0，按墙上时间重新起窗
+      const change = rateLastChange.current;
+      if (frames <= 0 || !change || change.at <= anchor.at) {
+        setRate(0);
+        rateAnchor.current = { at: now, frames: snap.sentFrames };
+        return;
+      }
+
+      // 收尾对齐到"最后一帧到达的时刻"而不是"现在"。
+      //
+      // 误差来自帧数是整数而时间是连续的：按墙上时间截断，2 秒一帧的配置在
+      // 5 秒窗口里时而 2 帧时而 3 帧，读数在 0.4 和 0.6 之间来回跳。两端都落在
+      // 帧到达的时刻上，窗口就总是跨整数帧，这项误差直接消失 —— 剩下的只有
+      // 轮询本身 50ms 的观测精度。
+      setRate((frames * 1000) / (change.at - anchor.at));
+      rateAnchor.current = change;
     };
 
     const id = setInterval(poll, FAST_MS);
