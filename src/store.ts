@@ -31,8 +31,8 @@ interface AppStore {
   mutate: MutationConfig;
 
   /**
-   * 预览版本号。解析规则或筛选规则一改就自增，用来作废预览缓存 ——
-   * 规则变了，屏幕上每一行的标注都跟着变，留着旧标注只会让人看到已经不成立的结果。
+   * 预览版本号。文件、解析规则、筛选规则任意一项变了就自增，用来作废预览缓存 ——
+   * 屏幕上每一行的内容与标注都跟着变，留着旧的只会让人看到已经不成立的结果。
    */
   previewVersion: number;
 
@@ -103,7 +103,9 @@ const restored = restoreConfig();
 
 export const useStore = create<AppStore>((set) => ({
   file: null,
-  setFile: (file) => set({ file }),
+  // 换了文件，缓存里的每一行都属于上一个文件，必须整体作废
+  setFile: (file) =>
+    set((s) => ({ file, previewVersion: s.previewVersion + 1 })),
 
   parse: restored.parse,
   filter: restored.filter,

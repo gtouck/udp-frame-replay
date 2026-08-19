@@ -12,8 +12,8 @@ const CHUNK = 200;
 /**
  * 按需拉取并缓存预览数据。
  *
- * 配置一改（version 自增）整个缓存立即作废 —— 解析规则变了，屏幕上每一行的
- * 标注都跟着变，缓存旧标注只会让人看到已经不成立的结果。
+ * 文件或配置一变（version 自增）整个缓存立即作废 —— 屏幕上每一行的内容与标注
+ * 都跟着变，缓存旧结果只会让人看到已经不成立的东西。
  */
 export function usePreview(
   config: ParseConfig,
@@ -54,7 +54,9 @@ export function usePreview(
           .finally(() => pending.current.delete(c));
       }
     },
-    [config, filter],
+    // version 也算依赖：缓存作废后要靠它的身份变化把调用方的取数 effect 重新跑一遍，
+    // 否则换文件时 config 没变，屏幕上就一直停在空行。
+    [config, filter, version],
   );
 
   const getLine = useCallback((line: number): LinePreview | undefined => {

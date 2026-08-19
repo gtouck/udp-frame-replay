@@ -41,13 +41,6 @@ export default function ChromeBar() {
   const paused = engine?.state === "paused";
   const finished = engine?.state === "finished";
 
-  /**
-   * 解析规则还停在「整行都是数据」上，说明使用者根本没配过 ——
-   * 这种时候替他推一把；一旦他自己调过，就不再擅自改动。
-   */
-  const parseUntouched =
-    parse.prefix.mode === "fields" && parse.prefix.skipFields === 0;
-
   async function load(path: string) {
     try {
       setFile(await openFile(path));
@@ -60,8 +53,9 @@ export default function ChromeBar() {
       return;
     }
 
-    // 推测失败不该影响「文件已经打开」这个事实，所以单独兜错
-    if (!parseUntouched) return;
+    // 换了文件就重推一次：新数据的格式未必和上一份一样，
+    // 留着上一份的规则更容易让人对着一屏报错发愣。推测失败不该影响
+    // 「文件已经打开」这个事实，所以单独兜错。
     try {
       const guess = await guessParse(parse);
       if (guess) {

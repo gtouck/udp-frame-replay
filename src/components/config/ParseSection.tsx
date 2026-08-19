@@ -17,8 +17,8 @@ export default function ParseSection() {
   const prefix = parse.prefix;
 
   /**
-   * 打开文件时只在使用者没配过的情况下自动推测；这里是随时可用的手动入口 ——
-   * 换一批格式不同的数据，或者被自己改乱了，按一下就能回到能用的状态。
+   * 打开文件时会自动推测一次；这里是随时可用的手动入口 ——
+   * 改乱了或者想推翻自己的调整，按一下就能回到能用的状态。
    */
   async function guess() {
     setGuessing(true);
