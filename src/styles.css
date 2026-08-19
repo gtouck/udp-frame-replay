@@ -55,6 +55,7 @@
 
   --r: 3px; /* 仪器的圆角很紧 */
   --row-h: 22px;
+  --config-w: 330px; /* 左侧操作面板宽度：够放下一行两个短字段 */
 }
 
 :root[data-theme="light"] {
@@ -131,7 +132,7 @@ body {
   height: 100%;
   display: grid;
   grid-template-rows: 40px 1fr 26px;
-  grid-template-columns: 268px 1fr;
+  grid-template-columns: var(--config-w) 1fr;
   grid-template-areas:
     "bar    bar"
     "config screens"
@@ -465,18 +466,35 @@ body {
 /* ── 配置面板 ─────────────────────────────────────────────── */
 .config {
   grid-area: config;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--seam);
   overflow: hidden;
   min-height: 0;
   background: var(--chrome);
 }
 
+/* 钉住的分组不参与滚动，剩下的高度全给滚动区 */
+.config > .group {
+  flex: none;
+}
+
 .config-scroll {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .group {
   border-bottom: 1px solid var(--seam);
+}
+
+/* 钉住的分组：标题只是标签，去掉三角后左边补齐，和下面各组对齐 */
+.group[data-pinned="true"] .group-head {
+  padding-left: 25px;
+  cursor: default;
+}
+.group[data-pinned="true"] .group-head:hover {
+  color: var(--ink-dim);
 }
 
 /* ── 预检结果 ─────────────────────────────────────────────── */
@@ -551,10 +569,10 @@ body {
 }
 
 .group-body {
-  padding: 2px 10px 12px;
+  padding: 2px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
 }
 
 /* ── 表单行 ───────────────────────────────────────────────── */
@@ -563,6 +581,25 @@ body {
   grid-template-columns: 62px 1fr;
   align-items: center;
   gap: 8px;
+}
+
+/* 两个短字段并排：面板加宽后省一行高度 */
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.field-pair .field {
+  grid-template-columns: max-content 1fr;
+  gap: 6px;
+}
+
+/* 地址 + 端口：两行的标签和输入框上下对齐，端口只要够填 5 位数 */
+.field-pair[data-split="addr"] {
+  grid-template-columns: 1fr 96px;
+}
+.field-pair[data-split="addr"] .field:first-child {
+  grid-template-columns: 48px 1fr;
 }
 
 .field-label {
@@ -586,6 +623,19 @@ body {
 .input:focus,
 .select:focus {
   border-color: var(--seam-lit);
+}
+
+/* 禁用：连标签和后缀一起灰掉，一眼看出这行现在不起作用 */
+.input:disabled,
+.select:disabled {
+  color: var(--ink-faint);
+  background: var(--chrome);
+  cursor: default;
+}
+.field:has(.input:disabled) .field-label,
+.input:disabled + .input-suffix {
+  color: var(--ink-faint);
+  opacity: 0.6;
 }
 
 .select {

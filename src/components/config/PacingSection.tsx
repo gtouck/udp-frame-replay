@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { formatCount } from "../../api";
 import { useStore } from "../../store";
-import { Check, Field, Hint, NumberField, Segments } from "./Field";
+import { Check, Field, FieldPair, Hint, NumberField, Segments } from "./Field";
 
 type Unit = "us" | "ms" | "s";
 const SCALE: Record<Unit, number> = { us: 1, ms: 1000, s: 1_000_000 };
@@ -15,7 +15,6 @@ export default function PacingSection() {
   const [unit, setUnit] = useState<Unit>("ms");
   const shown = pacing.intervalUs / SCALE[unit];
 
-  const rate = pacing.intervalUs > 0 ? 1_000_000 / pacing.intervalUs : 0;
   const lineCount = file?.lineCount ?? 0;
 
   return (
@@ -48,51 +47,45 @@ export default function PacingSection() {
         </div>
       </Field>
 
-      <Hint>
-        {pacing.intervalUs === 0
-          ? "间隔 0 表示全速发送，速率由网卡和内核决定。"
-          : `约 ${formatCount(Math.round(rate))} 帧/秒。`}
-      </Hint>
+      <FieldPair>
+        <NumberField
+          label="起始行"
+          value={pacing.startLine}
+          min={1}
+          max={lineCount || undefined}
+          onChange={(startLine) => setPacing({ startLine })}
+        />
 
-      <NumberField
-        label="起始行"
-        value={pacing.startLine}
-        min={1}
-        max={lineCount || undefined}
-        onChange={(startLine) => setPacing({ startLine })}
-      />
-
-      <NumberField
-        label="结束行"
-        value={pacing.endLine}
-        min={0}
-        max={lineCount || undefined}
-        onChange={(endLine) => setPacing({ endLine })}
-      />
+        <NumberField
+          label="结束行"
+          value={pacing.endLine}
+          min={0}
+          max={lineCount || undefined}
+          onChange={(endLine) => setPacing({ endLine })}
+        />
+      </FieldPair>
 
       <Hint>
         结束行填 0 表示发到文件末尾
         {lineCount > 0 ? `（共 ${formatCount(lineCount)} 行）` : ""}。
       </Hint>
+      <FieldPair>
+        <Check
+          label="循环发送"
+          checked={pacing.repeat}
+          onChange={(repeat) => setPacing({ repeat })}
+        />
+        <NumberField
+          label="循环"
+          value={pacing.repeatCount}
+          min={0}
+          disabled={!pacing.repeat}
+          onChange={(repeatCount) => setPacing({ repeatCount })}
+          suffix="次"
+        />
+      </FieldPair>
+      <Hint>填 0 表示一直循环，直到手动停止。</Hint>
 
-      <Check
-        label="循环发送"
-        checked={pacing.repeat}
-        onChange={(repeat) => setPacing({ repeat })}
-      />
-
-      {pacing.repeat && (
-        <>
-          <NumberField
-            label="循环"
-            value={pacing.repeatCount}
-            min={0}
-            onChange={(repeatCount) => setPacing({ repeatCount })}
-            suffix="次"
-          />
-          <Hint>填 0 表示一直循环，直到手动停止。</Hint>
-        </>
-      )}
 
       <Segments
         value={pacing.highPrecision ? "high" : "normal"}
@@ -102,12 +95,6 @@ export default function PacingSection() {
           { value: "high", label: "高精度" },
         ]}
       />
-
-      <Hint>
-        {pacing.highPrecision
-          ? "自旋等待，误差可压到个位数微秒，但会占满一个 CPU 核心。抖动统计在状态栏。"
-          : "睡眠驱动，几乎不占 CPU，误差取决于系统调度粒度（通常 1ms 级）。"}
-      </Hint>
     </>
   );
 }

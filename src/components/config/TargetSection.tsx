@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { networkInterfaces, type InterfaceInfo } from "../../api";
 import { useStore } from "../../store";
-import { Check, Field, Hint, NumberField, Segments, TextField } from "./Field";
+import { Check, Field, FieldPair, NumberField, Segments, TextField } from "./Field";
 
 export default function TargetSection() {
   const target = useStore((s) => s.target);
@@ -28,41 +28,66 @@ export default function TargetSection() {
         ]}
       />
 
-      {target.mode === "unicast" ? (
-        <TextField
-          label="目标 IP"
-          value={target.host}
-          onChange={(host) => setTarget({ host } as never)}
-          placeholder="127.0.0.1"
-        />
-      ) : (
-        <>
+      {/* 目标地址和端口一行，本机地址和端口一行 —— 上下对着看 */}
+      <FieldPair split="addr">
+        {target.mode === "unicast" ? (
           <TextField
-            label="组播地址"
+            label="目标 IP"
+            value={target.host}
+            onChange={(host) => setTarget({ host } as never)}
+            placeholder="127.0.0.1"
+          />
+        ) : (
+          <TextField
+            label="组播 IP"
             value={target.group}
             onChange={(group) => setTarget({ group } as never)}
             placeholder="239.255.0.1"
           />
+        )}
 
-          <Field label="出站网卡" htmlFor="cfg-iface">
-            <select
-              id="cfg-iface"
-              className="select"
-              value={target.interface ?? ""}
-              onChange={(e) =>
-                setTarget({ interface: e.target.value || null } as never)
-              }
-            >
-              <option value="">系统默认路由</option>
-              {ifaces.map((i) => (
-                <option key={`${i.name}-${i.ip}`} value={i.ip}>
-                  {i.name} · {i.ip}
-                  {i.isLoopback ? "（回环）" : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
+        <NumberField
+          label="端口"
+          value={target.port}
+          min={1}
+          max={65535}
+          onChange={(port) => setTarget({ port } as never)}
+        />
+      </FieldPair>
 
+      <FieldPair split="addr">
+        <Field label="本地 IP" htmlFor="cfg-bind-addr">
+          <select
+            id="cfg-bind-addr"
+            className="select"
+            value={bindAddr}
+            onChange={(e) => setTarget({ bindAddr: e.target.value || null })}
+          >
+            <option value="">自动</option>
+            {configuredBindMissing && (
+              <option value={bindAddr}>{bindAddr}（当前未检测到）</option>
+            )}
+            {ifaces.map((iface) => (
+              <option key={`bind-${iface.name}-${iface.ip}`} value={iface.ip}>
+                {iface.name} · {iface.ip}
+                {iface.isLoopback ? "（回环）" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <NumberField
+          label="端口"
+          value={target.bindPort ?? 0}
+          min={0}
+          max={65535}
+          onChange={(v) => setTarget({ bindPort: v || null })}
+        />
+      </FieldPair>
+
+      {/* 出站网卡不再单独选：本地 IP 选了哪张网卡，组播就从哪张发出去 */}
+      {target.mode === "multicast" && (
+        <>
           <NumberField
             label="TTL"
             value={target.ttl}
@@ -76,54 +101,8 @@ export default function TargetSection() {
             checked={target.loopback}
             onChange={(loopback) => setTarget({ loopback } as never)}
           />
-
-          <Hint>
-            多网卡机器上不指定出站网卡，组播很可能从错误的网卡发出去。
-            不确定就挑数据网所在的那张。
-          </Hint>
         </>
       )}
-
-      <NumberField
-        label="端口"
-        value={target.port}
-        min={1}
-        max={65535}
-        onChange={(port) => setTarget({ port } as never)}
-      />
-
-      <Field label="本地地址" htmlFor="cfg-bind-addr">
-        <select
-          id="cfg-bind-addr"
-          className="select"
-          value={bindAddr}
-          onChange={(e) => setTarget({ bindAddr: e.target.value || null })}
-        >
-          <option value="">自动（0.0.0.0）</option>
-          {configuredBindMissing && (
-            <option value={bindAddr}>{bindAddr}（当前未检测到）</option>
-          )}
-          {ifaces.map((iface) => (
-            <option key={`bind-${iface.name}-${iface.ip}`} value={iface.ip}>
-              {iface.name} · {iface.ip}
-              {iface.isLoopback ? "（回环）" : ""}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      <NumberField
-        label="本地端口"
-        value={target.bindPort ?? 0}
-        min={0}
-        max={65535}
-        onChange={(v) => setTarget({ bindPort: v || null })}
-      />
-
-      <Hint>
-        本地地址读取自本机 IPv4 网卡；选择后套接字会绑定该 IP。选“自动”则绑定
-        0.0.0.0。本地端口填 0 由系统分配，有些接收端会校验源端口。
-      </Hint>
     </>
   );
 }

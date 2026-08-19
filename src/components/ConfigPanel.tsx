@@ -11,8 +11,17 @@ import OverlayScrollArea from "./OverlayScrollArea";
 export default function ConfigPanel() {
   return (
     <aside className="config">
+      {/* 发送目标最常改：钉在面板顶上，不折叠也不跟着滚 */}
+      <Group name="发送目标" pinned>
+        <TargetSection />
+      </Group>
+
       <OverlayScrollArea className="config-scroll">
         <PreflightPanel />
+
+        <Group name="节奏控制">
+          <PacingSection />
+        </Group>
 
         <Group name="解析规则">
           <ParseSection />
@@ -24,14 +33,6 @@ export default function ConfigPanel() {
 
         <Group name="修改规则" defaultOpen={false}>
           <MutateSection />
-        </Group>
-
-        <Group name="发送目标">
-          <TargetSection />
-        </Group>
-
-        <Group name="节奏控制">
-          <PacingSection />
         </Group>
 
         <Group name="配置档" defaultOpen={false}>

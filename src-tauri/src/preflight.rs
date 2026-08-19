@@ -156,11 +156,18 @@ fn check_target(cfg: &SendConfig, engine_active: bool, out: &mut Vec<Problem>) {
 
     if let TargetKind::Multicast { interface, ttl, .. } = &cfg.target.kind {
         // 不用 is_none_or：那是 1.82 才稳定的 API，crate 声明的 MSRV 是 1.77
-        let unset = interface.as_deref().map_or(true, |s| s.trim().is_empty());
+        let blank = |s: &Option<String>| {
+            s.as_deref().map_or(true, |v| {
+                let v = v.trim();
+                v.is_empty() || v == "0.0.0.0"
+            })
+        };
+        // 出站网卡默认跟随本地 IP，所以两个都没设才有挑错网卡的风险
+        let unset = blank(interface) && blank(&cfg.target.bind_addr);
         if unset && crate::net::list_interfaces().iter().filter(|i| !i.is_loopback).count() > 1 {
             out.push(Problem::warn(
                 "发送目标",
-                "本机有多张网卡但没指定出站网卡，组播可能从错误的网卡发出去",
+                "本机有多张网卡但本地 IP 选的是自动，组播可能从错误的网卡发出去",
             ));
         }
         if *ttl == 0 {

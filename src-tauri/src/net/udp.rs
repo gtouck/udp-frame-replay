@@ -97,7 +97,8 @@ impl UdpSender {
                 loopback,
                 ..
             } => {
-                configure_multicast(&socket, dest, interface.as_deref(), *ttl, *loopback)?;
+                let iface = multicast_if(interface.as_deref(), cfg.bind_addr.as_deref())?;
+                configure_multicast(&socket, dest, iface, *ttl, *loopback)?;
 
                 // 组播绝不能 connect，两个原因：
                 //
@@ -129,7 +130,7 @@ impl UdpSender {
         Ok(UdpSender {
             socket,
             dispatch,
-            description: describe(&cfg.kind, dest),
+            description: describe(cfg, dest),
         })
     }
 
@@ -216,10 +217,33 @@ fn bind_local(socket: &Socket, cfg: &TargetConfig, ipv4: bool) -> Result<(), Net
     })
 }
 
+/// 组播的出站网卡。
+///
+/// bind 只决定**源地址**，不决定组播从哪张网卡出去 —— 出口由 `IP_MULTICAST_IF`
+/// 单独控制，不设就按路由表挑，多网卡机器上很容易挑错。所以这里让它默认跟随
+/// 本地 IP：界面上选了本地 IP，组播就从那张网卡出去，符合直觉。
+/// 配置里显式写了 interface（老配置档）仍然优先。
+fn multicast_if(interface: Option<&str>, bind_addr: Option<&str>) -> Result<Ipv4Addr, NetError> {
+    let nonempty = |s: &&str| !s.trim().is_empty();
+
+    if let Some(s) = interface.filter(nonempty) {
+        return s
+            .trim()
+            .parse()
+            .map_err(|_| NetError::BadInterface(s.to_string()));
+    }
+
+    // 本地 IP 的格式错误留给 bind 去报，这里解析不出来就当没设
+    Ok(bind_addr
+        .filter(nonempty)
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(Ipv4Addr::UNSPECIFIED))
+}
+
 fn configure_multicast(
     socket: &Socket,
     dest: SocketAddr,
-    interface: Option<&str>,
+    iface: Ipv4Addr,
     ttl: u32,
     loopback: bool,
 ) -> Result<(), NetError> {
@@ -227,29 +251,22 @@ fn configure_multicast(
         return Err(NetError::MulticastIpv6Unsupported);
     }
 
-    let iface: Ipv4Addr = match interface {
-        Some(s) if !s.trim().is_empty() => s
-            .parse()
-            .map_err(|_| NetError::BadInterface(s.to_string()))?,
-        _ => Ipv4Addr::UNSPECIFIED,
-    };
-
     socket.set_multicast_if_v4(&iface)?;
     socket.set_multicast_ttl_v4(ttl)?;
     socket.set_multicast_loop_v4(loopback)?;
     Ok(())
 }
 
-fn describe(kind: &TargetKind, dest: SocketAddr) -> String {
-    match kind {
+fn describe(cfg: &TargetConfig, dest: SocketAddr) -> String {
+    match &cfg.kind {
         TargetKind::Unicast { .. } => format!("单播 → {dest}"),
         TargetKind::Multicast {
             interface, ttl, ..
         } => {
-            let via = interface
-                .as_deref()
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or("系统默认");
+            let via = match multicast_if(interface.as_deref(), cfg.bind_addr.as_deref()) {
+                Ok(ip) if !ip.is_unspecified() => ip.to_string(),
+                _ => "系统默认".to_string(),
+            };
             format!("组播 → {dest}（网卡 {via}，TTL {ttl}）")
         }
     }
@@ -352,6 +369,24 @@ mod tests {
                 "BrokenPipe 说明真实错误被 connect 掩盖了"
             );
         }
+    }
+
+    /// 没单独指定出站网卡时，组播跟着本地 IP 走 —— 界面上只剩「本地 IP」一个旋钮。
+    #[test]
+    fn multicast_follows_bind_address() {
+        let cfg = TargetConfig {
+            bind_addr: Some("127.0.0.1".into()),
+            ..multicast("239.255.0.1", 19013)
+        };
+        let s = UdpSender::build(&cfg).unwrap();
+        assert_eq!(s.socket.multicast_if_v4().unwrap(), Ipv4Addr::LOCALHOST);
+    }
+
+    #[test]
+    fn explicit_interface_beats_bind_address() {
+        let iface = multicast_if(Some("10.0.0.5"), Some("127.0.0.1")).unwrap();
+        assert_eq!(iface, Ipv4Addr::new(10, 0, 0, 5));
+        assert!(multicast_if(None, None).unwrap().is_unspecified());
     }
 
     #[test]

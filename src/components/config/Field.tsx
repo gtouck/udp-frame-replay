@@ -20,6 +20,24 @@ export function Field({
   );
 }
 
+/**
+ * 两个短字段并排一行。
+ * split="addr" 用于「地址 + 端口」：地址占大头，端口只留够填 5 位数。
+ */
+export function FieldPair({
+  children,
+  split,
+}: {
+  children: ReactNode;
+  split?: "addr";
+}) {
+  return (
+    <div className="field-pair" data-split={split}>
+      {children}
+    </div>
+  );
+}
+
 export function TextField({
   label,
   value,

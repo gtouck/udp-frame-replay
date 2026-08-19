@@ -82,11 +82,6 @@ export default function ProfileSection() {
       </div>
 
       {note && <Hint>{note}</Hint>}
-
-      <Hint>
-        解析、筛选、修改、目标、节奏五部分一起存成一个 JSON 文件，默认存到程序所在目录，
-        换台机器也能直接用。日常不用特意保存 —— 配置本来就会自动记住，下次打开还在。
-      </Hint>
     </>
   );
 }

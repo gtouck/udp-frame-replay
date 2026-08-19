@@ -149,11 +149,6 @@ export default function ParseSection() {
         value={parse.hex.ignoreChars}
         onChange={(v) => setParse({ hex: { ignoreChars: v } })}
       />
-
-      <Hint>
-        数据中的空白和这些字符会被跳过。遇到其他非十六进制字符时数据到此为止，
-        其后按尾注处理。
-      </Hint>
     </>
   );
 }
