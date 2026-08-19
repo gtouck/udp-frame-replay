@@ -930,16 +930,16 @@ body {
 
 .overlay-scrollbar[data-axis="y"] {
   top: 4px;
-  right: 3px;
+  right: 1px;
   bottom: 4px;
-  width: 8px;
+  width: 12px;
 }
 
 .overlay-scrollbar[data-axis="x"] {
   right: 4px;
-  bottom: 3px;
+  bottom: 1px;
   left: 4px;
-  height: 8px;
+  height: 12px;
 }
 
 .overlay-scroll-thumb {
@@ -951,17 +951,18 @@ body {
 }
 
 .overlay-scrollbar[data-axis="y"] .overlay-scroll-thumb {
-  right: 1px;
-  width: 5px;
+  right: 2px;
+  width: 7px;
   min-height: 24px;
 }
 
 .overlay-scrollbar[data-axis="x"] .overlay-scroll-thumb {
-  bottom: 1px;
-  height: 5px;
+  bottom: 2px;
+  height: 7px;
   min-width: 24px;
 }
 
+/* 指针进到这块面板、或正在滚动时才浮现，静息时不占视线 */
 .overlay-scroll-area:hover
   > .overlay-scrollbar[data-visible="true"],
 .overlay-scroll-area[data-scrolling="true"]
@@ -1423,10 +1424,34 @@ body {
   color: var(--ink);
 }
 
+/* 速查卡是弹窗，滚动条占几个像素无所谓，但配色要跟机身一致，
+   别让 Windows 原生那条灰白槽子突兀地插进来 */
 .help-body {
   overflow-y: auto;
   padding: 4px 16px 16px;
   user-select: text;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+.help-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.help-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.help-body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: content-box;
+}
+
+.help-body::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: content-box;
 }
 
 .help-sec {
@@ -1517,10 +1542,30 @@ body {
   flex: none;
 }
 
-.btn-caret {
-  padding: 0 6px;
-  font-size: 10px;
-  line-height: 1;
+/* 26px = 「打开文件」那种普通按钮的高度，两个挨着时上下沿要齐 */
+.recent-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.recent-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 菜单开着的时候按钮保持按下态，否则移开鼠标就看不出是谁弹出来的 */
+.recent-btn[aria-expanded="true"]:not(:disabled) {
+  color: var(--ink-bright);
+  background: var(--button-hover);
+  border-color: var(--seam-lit);
 }
 
 /* 点空白处关菜单。铺满全窗口，但压在菜单下面。 */

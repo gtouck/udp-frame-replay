@@ -152,17 +152,22 @@ const OverlayScrollArea = forwardRef<HTMLDivElement, OverlayScrollAreaProps>(
       });
 
       void document.fonts?.ready.then(scheduleSync);
-      scheduleSync();
+
+      // 窗口被遮挡或最小化时 requestAnimationFrame 不会触发，只走 scheduleSync
+      // 的话滑块会一直停在初始的「不可见」上，等窗口回到前台也不会自己纠正。
+      document.addEventListener("visibilitychange", sync);
+      sync();
 
       return () => {
         resizeObserver.disconnect();
         mutationObserver.disconnect();
+        document.removeEventListener("visibilitychange", sync);
         if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
         if (idleTimerRef.current !== null) {
           window.clearTimeout(idleTimerRef.current);
         }
       };
-    }, [scheduleSync]);
+    }, [scheduleSync, sync]);
 
     const handleScroll: UIEventHandler<HTMLDivElement> = (event) => {
       scheduleSync();

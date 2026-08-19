@@ -153,14 +153,18 @@ export default function ChromeBar() {
         {recent.length > 0 && (
           <div className="recent">
             <button
-              className="btn btn-caret"
+              className="btn recent-btn"
               onClick={() => setMenuOpen((o) => !o)}
               disabled={active}
               aria-expanded={menuOpen}
               aria-label="最近打开的文件"
               title="最近打开的文件"
             >
-              ▾
+              <svg viewBox="0 0 20 20" aria-hidden>
+                <path d="M2.5 10a7.5 7.5 0 1 0 7.5-7.5 8.1 8.1 0 0 0-5.62 2.28L2.5 6.67" />
+                <path d="M2.5 2.5v4.17h4.17" />
+                <path d="M10 5.83V10l3.33 1.67" />
+              </svg>
             </button>
 
             {menuOpen && (
