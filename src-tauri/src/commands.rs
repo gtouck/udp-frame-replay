@@ -276,6 +276,15 @@ pub fn save_profile(
     Ok(())
 }
 
+/// 程序所在目录。
+///
+/// 前端拿它当存取配置档的默认路径 —— 便携版里配置就该躺在程序旁边，
+/// 而不是每次弹窗都从「文档」开始翻。
+#[tauri::command]
+pub fn app_dir() -> String {
+    crate::portable::app_dir().to_string_lossy().into_owned()
+}
+
 #[tauri::command]
 pub fn load_profile(path: String, state: State<'_, AppState>) -> Result<Profile, String> {
     let text = std::fs::read_to_string(&path).map_err(|e| format!("读取 {path} 失败：{e}"))?;

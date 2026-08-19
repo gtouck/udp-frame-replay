@@ -1,8 +1,25 @@
+import { join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
-import { loadProfile, saveProfile } from "../../api";
+import { appDir, loadProfile, saveProfile } from "../../api";
 import { configOf, useStore } from "../../store";
 import { Hint, TextField } from "./Field";
+
+/**
+ * 存取配置档时的起始位置：程序所在目录。
+ *
+ * 便携版是「一个文件夹装下全部」的用法，配置档理应躺在程序旁边；
+ * 系统默认的「文档」目录反而要人多翻两层。取不到就返回 undefined，
+ * 让对话框自己决定 —— 这只是个默认值，不值得为它中断保存。
+ */
+async function defaultPath(fileName?: string): Promise<string | undefined> {
+  try {
+    const dir = await appDir();
+    return fileName ? await join(dir, fileName) : dir;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 配置档存取。
@@ -19,7 +36,7 @@ export default function ProfileSection() {
 
   async function doSave() {
     const path = await save({
-      defaultPath: `${name || "配置"}.json`,
+      defaultPath: await defaultPath(`${name || "配置"}.json`),
       filters: [{ name: "配置档", extensions: ["json"] }],
     });
     if (!path) return;
@@ -36,6 +53,7 @@ export default function ProfileSection() {
     const picked = await open({
       multiple: false,
       directory: false,
+      defaultPath: await defaultPath(),
       filters: [{ name: "配置档", extensions: ["json"] }],
     });
     if (typeof picked !== "string") return;
@@ -66,8 +84,8 @@ export default function ProfileSection() {
       {note && <Hint>{note}</Hint>}
 
       <Hint>
-        解析、筛选、修改、目标、节奏五部分一起存成一个 JSON 文件，换台机器也能直接用。
-        日常不用特意保存 —— 配置本来就会自动记住，下次打开还在。
+        解析、筛选、修改、目标、节奏五部分一起存成一个 JSON 文件，默认存到程序所在目录，
+        换台机器也能直接用。日常不用特意保存 —— 配置本来就会自动记住，下次打开还在。
       </Hint>
     </>
   );

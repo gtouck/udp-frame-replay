@@ -283,6 +283,10 @@
               return out;
             }
 
+            case "app_dir":
+              return "C:\\便携版示例目录";
+            case "plugin:path|join":
+              return args.paths.join("\\");
             case "save_profile":
               return null;
             case "load_profile":

@@ -51,6 +51,48 @@ npm run tauri build
 | Windows | `msi/*.msi`、`nsis/*-setup.exe` |
 | Linux | `deb/*.deb`、`appimage/*.AppImage`、`rpm/*.rpm` |
 
+## 免安装压缩包
+
+```bash
+npm run build:portable
+```
+
+产物在 `release/`：一个 `产品名-v版本-平台-架构.zip`，外加解压后的同名目录（方便直接跑一下看看）。
+里面是 exe、`使用说明.md`、`示例数据/`、`便携版说明.txt` —— 解压即用，不需要安装程序。
+
+常用参数：
+
+```bash
+npm run build:portable -- --skip-build                          # 复用已有的 release 产物，只重新打包
+npm run build:portable -- -- --target x86_64-pc-windows-msvc    # 第二个 -- 之后原样转给 tauri build
+```
+
+脚本做的事：`tauri build --no-bundle`（只编译，不生成 MSI/NSIS）→ 摆好目录 → 压缩。
+target 目录问 `cargo metadata` 要，不写死 `src-tauri/target`（`CARGO_TARGET_DIR` 可能把它挪走）。
+
+### 配置为什么不会跑到用户目录去
+
+免安装的前提是「删掉文件夹就等于卸载干净」，这不是打包脚本能保证的，靠的是 `src-tauri/src/portable.rs`：
+
+- Tauri 在 Windows/Linux 上默认把 webview 数据目录指向 `%LOCALAPPDATA%\<identifier>`，
+  自动记忆的配置存在 localStorage 里，也就一并落到了用户目录。
+- 所以窗口改成在 `lib.rs` 的 `setup` 里建（`tauri.conf.json` 里那个窗口配了 `"create": false`），
+  建的时候把 `data_directory` 指到 `<程序目录>/data`。
+- 程序目录不可写时（装进了 `Program Files`、或从只读介质运行）退回系统目录：
+  便携性没了，但配置还记得住，比启动直接失败强。
+- 手动存的配置档，存取对话框的默认位置也是程序所在目录（`app_dir` 命令）。
+
+### 打包脚本里两个 Windows 的坑
+
+改这个脚本时别踩回去：
+
+- **不能用 `fs.cpSync` 拷目录**。Node 22 在 Windows 上，目标路径带中文且长到一定程度时它会直接
+  access violation（退出码 `0xC0000005`），而压缩包的目录名恰好是「中文产品名 + 版本 + 平台」。
+  脚本里用 `copyFileSync` 自己递归。
+- **不能用自带的 `tar` 压 zip**。bsdtar 不置 UTF-8 标志位，中文文件名到资源管理器里就是乱码。
+  脚本走 .NET 的 `ZipFile`，并且优先用 `pwsh` —— Windows PowerShell 5.1 那套 .NET Framework
+  写出来的目录分隔符是 `\`，不合 zip 规范。
+
 ### macOS 上的 DMG 打包
 
 `.app` 在任何环境下都能打出来。`.dmg` 那一步会调 `bundle_dmg.sh`，

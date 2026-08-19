@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "create": false,
         "title": "数据帧回放工具",
         "width": 1400,
         "height": 900,

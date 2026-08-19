@@ -352,6 +352,9 @@ export const saveProfile = (path: string, name: string, config: SendConfig) =>
 export const loadProfile = (path: string) =>
   invoke<Profile>("load_profile", { path });
 
+/** 程序所在目录。便携版里配置档默认存到这儿。 */
+export const appDir = () => invoke<string>("app_dir");
+
 // ── 默认配置 ────────────────────────────────────────────────
 
 export const defaultParseConfig = (): ParseConfig => ({
