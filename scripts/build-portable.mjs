@@ -152,29 +152,6 @@ copyFileSync(binary, join(stageDir, `${productName}${ext}`));
 copyFileSync(join(root, "docs/USER_MANUAL.md"), join(stageDir, "使用说明.md"));
 copyDir(join(root, "testdata"), join(stageDir, "示例数据"));
 
-writeFileSync(
-  join(stageDir, "便携版说明.txt"),
-  `${productName} v${version}（免安装版）
-
-怎么用
-  双击 ${productName}${ext} 就行，不需要安装。
-
-东西都放在哪
-  配置、窗口状态等自动记忆    本文件夹下的 data 目录（首次运行时自动建）
-  手动保存的配置档            默认存到本文件夹，也可以另存到别处
-
-  提示：放到 C:\\Program Files 这类需要管理员权限的位置时，本文件夹不可写，
-  配置会退回存到系统的用户目录 —— 想保持便携就放在普通目录下。
-
-运行环境
-  Windows 10 1803 及以上。
-  依赖系统的 WebView2 运行时：Windows 11 自带；Windows 10 若提示缺少，
-  到 https://developer.microsoft.com/microsoft-edge/webview2/ 装一次即可。
-
-详细用法见 使用说明.md。
-`.replace(/\n/g, "\r\n"),
-);
-
 // ── 压缩 ────────────────────────────────────────────────────
 
 rmSync(zipPath, { force: true });
