@@ -5,14 +5,14 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::State;
 
-use crate::config::{FilterConfig, ParseConfig, Profile, SendConfig};
-use crate::engine::{Engine, EngineSnapshot, SentFrame};
+use crate::config::{FilterConfig, ParseConfig, Profile, SendConfig, TextEncoding};
+use crate::engine::{frame_preview, Engine, EngineSnapshot, SentFrame};
 use crate::filter::CompiledFilter;
 use crate::guess::Guess;
 use crate::log::{ErrorGroup, LogEntry};
 use crate::net::{list_interfaces, InterfaceInfo};
-use crate::preflight::{self, Problem};
 use crate::parse::{self, ParseErrorKind};
+use crate::preflight::{self, Problem};
 use crate::source::{DataSource, FileInfo};
 use crate::state::AppState;
 
@@ -82,6 +82,27 @@ pub fn close_file(state: State<'_, AppState>) {
 #[tauri::command]
 pub fn file_info(state: State<'_, AppState>) -> Option<FileInfo> {
     state.source.read().as_ref().map(|s| s.info())
+}
+
+/// 复制时读取完整原文，不受预览片段长度限制。
+#[tauri::command]
+pub fn source_line(
+    path: String,
+    line_no: usize,
+    encoding: TextEncoding,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let guard = state.source.read();
+    let src = guard.as_ref().ok_or("尚未打开文件")?;
+    if src.info().path != path {
+        return Err("文件已切换，请重新选择要复制的行".into());
+    }
+    src.verify_unchanged().map_err(|e| e.to_string())?;
+    line_no
+        .checked_sub(1)
+        .and_then(|i| src.line_text(i, encoding))
+        .map(|s| s.into_owned())
+        .ok_or_else(|| "该行不存在，请重新选择".into())
 }
 
 /// 取 `[start, start+count)` 行的解析预览（`start` 为 0-based 行号）。
@@ -179,6 +200,7 @@ pub fn start_send(config: SendConfig, state: State<'_, AppState>) -> Result<(), 
     })?;
 
     *slot = Some(engine);
+    state.stopped_frames.lock().clear();
     Ok(())
 }
 
@@ -206,9 +228,9 @@ pub fn step_send(state: State<'_, AppState>) {
 
 #[tauri::command]
 pub fn stop_send(state: State<'_, AppState>) {
-    let engine = state.engine.lock().take();
-    if let Some(e) = engine {
-        e.shutdown();
+    let mut engine = state.engine.lock();
+    if let Some(e) = engine.take() {
+        *state.stopped_frames.lock() = e.shutdown();
     }
 }
 
@@ -219,12 +241,39 @@ pub fn engine_status(state: State<'_, AppState>) -> Option<EngineSnapshot> {
 
 #[tauri::command]
 pub fn recent_frames(limit: usize, state: State<'_, AppState>) -> Vec<SentFrame> {
+    let limit = limit.min(200);
+    let engine = state.engine.lock();
+    if let Some(e) = engine.as_ref() {
+        return e.recent_frames(limit);
+    }
+    // 停止可能刚好落在状态与帧列表两次轮询之间，继续返回最后的摘要。
+    state
+        .stopped_frames
+        .lock()
+        .iter()
+        .rev()
+        .take(limit)
+        .rev()
+        .map(frame_preview)
+        .collect()
+}
+
+#[tauri::command]
+pub fn sent_frame(id: u64, state: State<'_, AppState>) -> Result<SentFrame, String> {
     state
         .engine
         .lock()
         .as_ref()
-        .map(|e| e.recent_frames(limit.min(200)))
-        .unwrap_or_default()
+        .and_then(|e| e.sent_frame(id))
+        .or_else(|| {
+            state
+                .stopped_frames
+                .lock()
+                .iter()
+                .find(|f| f.id == id)
+                .cloned()
+        })
+        .ok_or_else(|| "该帧已移出缓存，请暂停发送后重新选择".into())
 }
 
 // ── 日志 ────────────────────────────────────────────────────
@@ -244,7 +293,6 @@ pub fn error_groups(state: State<'_, AppState>) -> Vec<ErrorGroup> {
 pub fn clear_log(state: State<'_, AppState>) {
     state.log.clear();
 }
-
 
 // ── 预检 ────────────────────────────────────────────────────
 
@@ -290,7 +338,9 @@ pub fn load_profile(path: String, state: State<'_, AppState>) -> Result<Profile,
     let text = std::fs::read_to_string(&path).map_err(|e| format!("读取 {path} 失败：{e}"))?;
     let profile: Profile =
         serde_json::from_str(&text).map_err(|e| format!("{path} 不是有效的配置档：{e}"))?;
-    state.log.info(format!("已载入配置档 {} · {}", profile.name, path));
+    state
+        .log
+        .info(format!("已载入配置档 {} · {}", profile.name, path));
     Ok(profile)
 }
 

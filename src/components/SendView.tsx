@@ -1,41 +1,40 @@
-import { useEffect, useRef } from "react";
-import { formatCount, hex2, type Span } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { formatCount, hex2, sentFrame, type SentFrame } from "../api";
+import { ascii, frameHex, paint } from "../frameData";
 import { useStore } from "../store";
 import OverlayScrollArea from "./OverlayScrollArea";
+import FrameDetail from "./FrameDetail";
+import { useRowMenu } from "./RowMenu";
 
-/** 每帧在视图里展示的字节数上限，超出的部分省略 */
+/** 列表保留紧凑摘要，完整内容按需在详情中查看。 */
 const SHOW_BYTES = 32;
 
-const ascii = (b: number) =>
-  b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "·";
-
-/**
- * 把改动区段摊成「每个字节属于哪一类」。
- *
- * 后端给的是改完之后的帧内偏移，所以这里不做任何换算，直接铺开。
- * 后写的规则盖住先写的，与执行顺序一致。
- */
-function paint(len: number, spans: Span[]): (Span["kind"] | null)[] {
-  const marks: (Span["kind"] | null)[] = new Array(len).fill(null);
-  for (const s of spans) {
-    for (let i = s.start; i < s.start + s.len && i < len; i++) {
-      marks[i] = s.kind;
-    }
-  }
-  return marks;
-}
+const loadFrame = (frame: SentFrame) =>
+  frame.bytes.length === frame.len ? Promise.resolve(frame) : sentFrame(frame.id);
 
 export default function SendView() {
   const frames = useStore((s) => s.frames);
   const engine = useStore((s) => s.engine);
   const bodyRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const rowMenu = useRowMenu();
+  const [detail, setDetail] = useState<SentFrame | null>(null);
+
+  const inspect = async (pending: Promise<SentFrame>) => {
+    try {
+      setDetail(await pending);
+    } catch (error) {
+      useStore.getState().setNotice(String(error));
+    }
+  };
 
   // 跟随最新帧，但使用者往上翻看历史时不要把他拽回来
   useEffect(() => {
     const el = bodyRef.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [frames]);
+    if (el && pinned.current && !rowMenu.menu && !detail) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [frames, rowMenu.menu, detail]);
 
   const onScroll = () => {
     const el = bodyRef.current;
@@ -67,7 +66,7 @@ export default function SendView() {
         )}
 
         <span className="screen-note">
-          {engine ? `采样显示 · 实际已发 ${formatCount(sent)} 帧` : ""}
+          {engine ? `采样显示 · 实际已发 ${formatCount(sent)} 帧 · 右键复制 / 双击查看全部` : ""}
         </span>
       </header>
 
@@ -82,12 +81,27 @@ export default function SendView() {
           </div>
         ) : (
           <div className="dump">
-            {frames.map((f, i) => {
+            {frames.map((f) => {
               const shown = f.bytes.slice(0, SHOW_BYTES);
               const clipped = f.len > shown.length;
               const marks = paint(shown.length, f.spans ?? []);
               return (
-                <div className="dump-row" key={`${f.at}-${f.lineNo}-${i}`}>
+                <div
+                  className="dump-row"
+                  key={f.id}
+                  data-selected={rowMenu.selected === f.id ? "true" : undefined}
+                  onClick={() => rowMenu.select(f.id)}
+                  onDoubleClick={() => void inspect(loadFrame(f))}
+                  onContextMenu={(event) => {
+                    // 菜单打开时立即留住完整快照，避免等待操作期间被后续发送覆盖。
+                    const pending = loadFrame(f);
+                    void pending.catch(() => {});
+                    rowMenu.open(event, f.id, async () => frameHex((await pending).bytes), {
+                      label: "查看完整数据",
+                      run: () => inspect(pending),
+                    });
+                  }}
+                >
                   <span className="dump-line">{f.lineNo}</span>
                   <span className="dump-hex">
                     {shown.map((b, j) => (
@@ -96,7 +110,15 @@ export default function SendView() {
                         {j < shown.length - 1 ? " " : ""}
                       </span>
                     ))}
-                    {clipped ? " …" : ""}
+                    {clipped && (
+                      <button
+                        className="dump-expand"
+                        title="查看完整数据"
+                        onClick={() => void inspect(loadFrame(f))}
+                      >
+                        … 查看全部
+                      </button>
+                    )}
                   </span>
                   <span className="dump-ascii">
                     {shown.map(ascii).join("")}
@@ -109,6 +131,8 @@ export default function SendView() {
           </div>
         )}
       </OverlayScrollArea>
+      {rowMenu.menu}
+      {detail && <FrameDetail frame={detail} onClose={() => setDetail(null)} />}
     </section>
   );
 }

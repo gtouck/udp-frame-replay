@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { formatCount } from "../api";
+import { formatCount, sourceLine } from "../api";
 import { useStore } from "../store";
 import { usePreview } from "../usePreview";
 import OverlayScrollArea from "./OverlayScrollArea";
+import { useRowMenu } from "./RowMenu";
 
 const ROW_H = 22;
 
@@ -12,6 +13,7 @@ export default function SourceView() {
   const config = useStore((s) => s.parse);
   const filter = useStore((s) => s.filter);
   const version = useStore((s) => s.previewVersion);
+  const rowMenu = useRowMenu(version);
 
   const lineCount = file?.lineCount ?? 0;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -37,7 +39,7 @@ export default function SourceView() {
       <header className="screen-head">
         <span className="screen-name">数据原文</span>
         <span className="screen-note">
-          {file ? `${formatCount(lineCount)} 行` : ""}
+          {file ? `${formatCount(lineCount)} 行 · 右键复制原文` : ""}
         </span>
       </header>
 
@@ -54,6 +56,14 @@ export default function SourceView() {
                   className="row"
                   data-error={row?.error ? "true" : undefined}
                   data-filtered={row?.filtered ? "true" : undefined}
+                  data-selected={rowMenu.selected === v.index ? "true" : undefined}
+                  onClick={() => rowMenu.select(v.index)}
+                  onContextMenu={(event) => {
+                    if (!file) return;
+                    rowMenu.open(event, v.index, () =>
+                      sourceLine(file.path, v.index + 1, config.encoding),
+                    );
+                  }}
                   style={{ transform: `translateY(${v.start}px)` }}
                 >
                   <span className="row-no">{v.index + 1}</span>
@@ -63,6 +73,11 @@ export default function SourceView() {
                       <span className="seg-prefix">{row.prefix}</span>
                       <span className="seg-data">{row.data}</span>
                       <span className="seg-trailing">{row.trailing}</span>
+                      {row.truncated && (
+                        <span className="seg-trailing">
+                          {" "}…（预览已省略，右键可复制完整原文）
+                        </span>
+                      )}
                       {/* 错误紧跟数据，就近说明是哪一段出的问题 */}
                       {row.error && <span className="row-err">{row.errorMsg}</span>}
                       <span className="row-len">
@@ -78,6 +93,7 @@ export default function SourceView() {
           </div>
         )}
       </OverlayScrollArea>
+      {rowMenu.menu}
     </section>
   );
 }

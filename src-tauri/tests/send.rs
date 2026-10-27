@@ -23,11 +23,8 @@ static SEQ: AtomicU32 = AtomicU32::new(0);
 
 fn temp_file(content: &str) -> std::path::PathBuf {
     let n = SEQ.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!(
-        "data-perf-test-{}-{}.txt",
-        std::process::id(),
-        n
-    ));
+    let path =
+        std::env::temp_dir().join(format!("data-perf-test-{}-{}.txt", std::process::id(), n));
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(content.as_bytes()).unwrap();
     f.sync_all().unwrap();
@@ -72,7 +69,8 @@ fn cfg(port: u16) -> SendConfig {
 /// 绑定一个接收套接字，返回 (socket, 端口)
 fn receiver() -> (UdpSocket, u16) {
     let s = UdpSocket::bind("127.0.0.1:0").unwrap();
-    s.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    s.set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
     let port = s.local_addr().unwrap().port();
     (s, port)
 }
@@ -121,6 +119,64 @@ fn sends_every_line_in_order_with_exact_bytes() {
     assert_eq!(frames[2], vec![0xFF]);
     assert_eq!(frames[3], vec![0x10, 0x20, 0x30, 0x40]);
     assert_eq!(frames[4], vec![0x55]);
+}
+
+#[test]
+fn long_frame_details_preserve_sent_bytes_and_survive_shutdown() {
+    let data: Vec<u8> = (0..2048).map(|i| (i % 256) as u8).collect();
+    let hex = data
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let path = temp_file(&format!("[TX] 000001 发送 {hex}\n"));
+    let (sock, port) = receiver();
+    let mut c = cfg(port);
+    c.pacing.repeat = true;
+    c.pacing.repeat_count = 2;
+    c.mutate.rules.push(MutationRule {
+        enabled: true,
+        condition: None,
+        op: MutationOp::Sequence {
+            offset: 1800,
+            width: Width::W2,
+            endian: Endian::Big,
+            start: 7,
+            step: 1,
+            reset_each_loop: false,
+        },
+    });
+    let src = Arc::new(DataSource::open(&path).unwrap());
+    let engine = Engine::start(src, c, Arc::new(LogSink::default())).unwrap();
+    let received = collect(&sock, 2, Duration::from_secs(2));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !engine.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(engine.is_finished());
+    assert_eq!(received.len(), 2);
+    let previews = engine.recent_frames(2);
+    assert_eq!(previews.len(), 2);
+    assert_ne!(
+        previews[0].id, previews[1].id,
+        "同一行循环发送也必须有独立标识"
+    );
+    for (i, preview) in previews.iter().enumerate() {
+        assert_eq!(preview.bytes.len(), 256, "轮询只传摘要");
+        assert_eq!(preview.len, 2048);
+        let full = engine.sent_frame(preview.id).unwrap();
+        assert_eq!(
+            full.bytes, received[i],
+            "详情必须等于当时实际发出的完整字节"
+        );
+        assert_eq!(&full.bytes[1800..1802], &[0, 7 + i as u8]);
+        assert!(full.spans.iter().any(|s| s.start == 1800));
+    }
+    let retained = engine.shutdown();
+    assert_eq!(retained.len(), 2);
+    assert_eq!(retained[1].bytes, received[1], "停止后仍保留完整快照");
+    assert_eq!(retained[1].id, previews[1].id);
+    let _ = std::fs::remove_file(&path);
 }
 
 #[test]
@@ -176,8 +232,8 @@ fn malformed_lines_are_skipped_not_fatal() {
 fn gbk_encoded_file_sends_the_same_bytes() {
     let path = {
         let n = SEQ.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir()
-            .join(format!("data-perf-gbk-{}-{}.txt", std::process::id(), n));
+        let p =
+            std::env::temp_dir().join(format!("data-perf-gbk-{}-{}.txt", std::process::id(), n));
         let (bytes, _, _) = encoding_rs::GBK.encode(SAMPLE);
         std::fs::write(&p, &bytes).unwrap();
         p
@@ -293,7 +349,8 @@ fn multicast_loopback_reaches_a_joined_receiver() {
 
     let sock = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).unwrap();
     let port = sock.local_addr().unwrap().port();
-    sock.join_multicast_v4(&group, &Ipv4Addr::LOCALHOST).unwrap();
+    sock.join_multicast_v4(&group, &Ipv4Addr::LOCALHOST)
+        .unwrap();
     sock.set_read_timeout(Some(Duration::from_millis(300)))
         .unwrap();
 

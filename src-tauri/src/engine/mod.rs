@@ -46,8 +46,10 @@ pub fn state_name(s: u8) -> &'static str {
 /// 发送视图里展示的最近帧数量。高频发送时界面本来就只能采样。
 const RECENT_CAP: usize = 1000;
 
-/// 单帧在快照里保留的字节数上限
+/// 轮询只传摘要，完整字节在查看或复制时按需读取。
 const RECENT_BYTES: usize = 256;
+const RECENT_MEMORY_BYTES: usize = 8 * 1024 * 1024;
+static NEXT_FRAME_ID: AtomicU64 = AtomicU64::new(1);
 
 /// 抖动统计的样本窗口
 const JITTER_CAP: usize = 4096;
@@ -105,14 +107,29 @@ pub struct Stats {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentFrame {
+    /// 进程内唯一，循环发送同一行时也能准确定位当时发出的字节。
+    pub id: u64,
     pub line_no: u32,
     /// 实际发出的总字节数
     pub len: u32,
-    /// 帧内容，超长时截断
+    /// 最近帧列表为摘要；单帧查询返回完整内容。
     pub bytes: Vec<u8>,
     pub at: u64,
     /// 被修改规则改动过的字节区段
     pub spans: Vec<Span>,
+}
+
+pub(crate) fn frame_preview(frame: &SentFrame) -> SentFrame {
+    SentFrame {
+        bytes: frame.bytes[..frame.bytes.len().min(RECENT_BYTES)].to_vec(),
+        spans: frame.spans.clone(),
+        ..*frame
+    }
+}
+
+struct RecentFrames {
+    frames: VecDeque<SentFrame>,
+    bytes: usize,
 }
 
 #[derive(Default)]
@@ -154,7 +171,7 @@ pub struct Shared {
     pub stats: Stats,
     pub ring: Ring,
     pub log: Arc<LogSink>,
-    pub recent: Mutex<VecDeque<SentFrame>>,
+    recent: Mutex<RecentFrames>,
     pub jitter: Mutex<Jitter>,
     pub target_desc: String,
     pub interval_us: u64,
@@ -190,14 +207,18 @@ impl Shared {
             .fetch_add(data.len() as u64, Ordering::Relaxed);
 
         if let Some(mut r) = self.recent.try_lock() {
-            if r.len() >= RECENT_CAP {
-                r.pop_front();
+            while r.frames.len() >= RECENT_CAP || r.bytes + data.len() > RECENT_MEMORY_BYTES {
+                let Some(old) = r.frames.pop_front() else {
+                    break;
+                };
+                r.bytes -= old.bytes.len();
             }
-            let n = data.len().min(RECENT_BYTES);
-            r.push_back(SentFrame {
+            r.bytes += data.len();
+            r.frames.push_back(SentFrame {
+                id: NEXT_FRAME_ID.fetch_add(1, Ordering::Relaxed),
                 line_no,
                 len: data.len() as u32,
-                bytes: data[..n].to_vec(),
+                bytes: data.to_vec(),
                 at,
                 spans: spans.as_slice().to_vec(),
             });
@@ -251,7 +272,9 @@ impl Engine {
     ) -> Result<Self, EngineError> {
         // mmap 期间文件被外部截断会触发 SIGBUS，进程直接崩溃，
         // 常规错误处理兜不住，只能在开始前主动复检。
-        source.verify_unchanged().map_err(|_| EngineError::FileChanged)?;
+        source
+            .verify_unchanged()
+            .map_err(|_| EngineError::FileChanged)?;
 
         let line_count = source.line_count() as u64;
         let start = cfg.pacing.start_line.max(1);
@@ -297,7 +320,10 @@ impl Engine {
             stats: Stats::default(),
             ring: Ring::default(),
             log: log.clone(),
-            recent: Mutex::new(VecDeque::with_capacity(RECENT_CAP)),
+            recent: Mutex::new(RecentFrames {
+                frames: VecDeque::with_capacity(RECENT_CAP),
+                bytes: 0,
+            }),
             jitter: Mutex::new(Jitter::default()),
             target_desc,
             interval_us: cfg.pacing.interval_us,
@@ -345,8 +371,8 @@ impl Engine {
         self.shared.state.store(S_STOPPING, Ordering::Release);
     }
 
-    /// 停止并等待两个线程收尾
-    pub fn shutdown(mut self) {
+    /// 停止并等待两个线程收尾，交出最后一批完整帧供停止后查看。
+    pub fn shutdown(mut self) -> Vec<SentFrame> {
         self.stop();
         for t in self.threads.drain(..) {
             let _ = t.join();
@@ -356,6 +382,7 @@ impl Engine {
             "停止发送 · 共发出 {} 帧",
             self.shared.stats.sent_frames.load(Ordering::Relaxed)
         ));
+        self.shared.recent.lock().frames.drain(..).collect()
     }
 
     pub fn snapshot(&self) -> EngineSnapshot {
@@ -395,7 +422,24 @@ impl Engine {
     /// 最近发出的若干帧，供发送视图展示
     pub fn recent_frames(&self, limit: usize) -> Vec<SentFrame> {
         let r = self.shared.recent.lock();
-        r.iter().rev().take(limit).rev().cloned().collect()
+        r.frames
+            .iter()
+            .rev()
+            .take(limit)
+            .rev()
+            .map(frame_preview)
+            .collect()
+    }
+
+    /// 完整的已发送快照，包含发送当时的序号、时间戳和校验值。
+    pub fn sent_frame(&self, id: u64) -> Option<SentFrame> {
+        self.shared
+            .recent
+            .lock()
+            .frames
+            .iter()
+            .find(|f| f.id == id)
+            .cloned()
     }
 
     pub fn is_finished(&self) -> bool {
@@ -422,5 +466,49 @@ impl Drop for Engine {
         for t in self.threads.drain(..) {
             let _ = t.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_cache_keeps_complete_frames_with_bounded_memory() {
+        let shared = Shared {
+            state: AtomicU8::new(S_RUNNING),
+            step_credits: AtomicI64::new(0),
+            producer_done: AtomicBool::new(false),
+            stats: Stats::default(),
+            ring: Ring::new(1, 1),
+            log: Arc::new(LogSink::default()),
+            recent: Mutex::new(RecentFrames {
+                frames: VecDeque::new(),
+                bytes: 0,
+            }),
+            jitter: Mutex::new(Jitter::default()),
+            target_desc: String::new(),
+            interval_us: 0,
+        };
+        for _ in 0..RECENT_CAP + 1 {
+            shared.record_sent(1, &[0xAA], &SpanSet::default(), 123, None);
+        }
+        {
+            let cache = shared.recent.lock();
+            assert_eq!(cache.frames.len(), RECENT_CAP);
+            assert_eq!(cache.bytes, RECENT_CAP);
+            assert_ne!(cache.frames[0].id, cache.frames[1].id);
+        }
+        let data = vec![0xAB; crate::net::udp::MAX_UDP_PAYLOAD];
+        for _ in 0..RECENT_MEMORY_BYTES / data.len() + 1 {
+            shared.record_sent(1, &data, &SpanSet::default(), 123, None);
+        }
+        let cache = shared.recent.lock();
+        assert!(cache.bytes <= RECENT_MEMORY_BYTES, "完整快照不能无限增长");
+        assert_eq!(cache.frames.back().unwrap().bytes, data);
+        assert_eq!(
+            cache.bytes,
+            cache.frames.iter().map(|f| f.bytes.len()).sum::<usize>()
+        );
     }
 }

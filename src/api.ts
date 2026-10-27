@@ -252,6 +252,7 @@ export interface EngineSnapshot {
 }
 
 export interface SentFrame {
+  id: number;
   lineNo: number;
   len: number;
   bytes: number[];
@@ -310,6 +311,9 @@ export const closeFile = () => invoke<void>("close_file");
 
 export const fileInfo = () => invoke<FileInfo | null>("file_info");
 
+export const sourceLine = (path: string, lineNo: number, encoding: TextEncoding) =>
+  invoke<string>("source_line", { path, lineNo, encoding });
+
 export const preview = (
   start: number,
   count: number,
@@ -336,6 +340,8 @@ export const engineStatus = () => invoke<EngineSnapshot | null>("engine_status")
 
 export const recentFrames = (limit: number) =>
   invoke<SentFrame[]>("recent_frames", { limit });
+
+export const sentFrame = (id: number) => invoke<SentFrame>("sent_frame", { id });
 
 export const logEntries = (after: number, limit: number) =>
   invoke<LogEntry[]>("log_entries", { after, limit });

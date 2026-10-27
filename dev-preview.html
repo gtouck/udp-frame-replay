@@ -22,6 +22,7 @@
         { p: "[TX] 000125 发送 ", d: "02 B7 3F 2B", t: "  # 心跳" },
         { p: "[TX] 000126 发送 ", d: "01 A5 3F 2B 90 11 4C 1D", t: "" },
         { p: "[RX] 000127 接收 ", d: "0C 42 88 91 A0 07", t: "" },
+        { p: "[TX] 000128 发送 ", d: Array.from({ length: 2048 }, (_, i) => (i % 256).toString(16).toUpperCase().padStart(2, "0")).join(" "), t: "  # 长帧" },
       ];
       const ERRORS = {
         11: ["oddHexDigits", "十六进制字符数为奇数"],
@@ -40,6 +41,7 @@
       let run = null;
       let logSeq = 0;
       const logs = [];
+      const frameCache = new Map();
       const addLog = (level, text) =>
         logs.push({ seq: logSeq++, at: Date.now(), level, text });
 
@@ -108,6 +110,11 @@
               return FILE;
             case "file_info":
               return FILE;
+            case "source_line": {
+              const s = SAMPLE[args.lineNo % SAMPLE.length];
+              const err = ERRORS[args.lineNo % 1000];
+              return s.p + (err ? (err[0] === "emptyData" ? "" : "01 A5 3") : s.d) + s.t;
+            }
             case "close_file":
               return null;
 
@@ -123,10 +130,10 @@
                 rows.push({
                   lineNo,
                   prefix: s.p,
-                  data: err ? (err[0] === "emptyData" ? "" : "01 A5 3") : s.d,
+                  data: (err ? (err[0] === "emptyData" ? "" : "01 A5 3") : s.d).slice(0, 4096),
                   trailing: s.t,
                   byteLen: err ? 0 : s.d.split(" ").length,
-                  truncated: false,
+                  truncated: !err && s.d.length > 4096,
                   filtered: filtering && !err && s.p.startsWith("[RX]"),
                   error: err ? err[0] : null,
                   errorMsg: err ? err[1] : null,
@@ -159,6 +166,7 @@
               ];
 
             case "start_send": {
+              frameCache.clear();
               const c = args.config;
               const t = c.target;
               run = {
@@ -202,7 +210,7 @@
               return snapshot();
 
             case "recent_frames": {
-              if (!run) return [];
+              if (!run) return Array.from(frameCache.values()).slice(-args.limit).map((f) => ({ ...f, bytes: f.bytes.slice(0, 256) }));
               const n = Math.min(args.limit, 60);
               const out = [];
               for (let i = 0; i < n; i++) {
@@ -211,7 +219,8 @@
                 const b = bytesOf(idx);
                 // 模拟：头 2 字节是插入的，第 3 字节被替换，末 2 字节是校验和
                 const framed = [0x5a, 0xa5, ...b, 0x1d, 0x0f];
-                out.push({
+                const frame = {
+                  id: idx + 1,
                   lineNo: (idx % FILE.lineCount) + 1,
                   len: framed.length,
                   bytes: framed,
@@ -223,9 +232,18 @@
                         { start: framed.length - 2, len: 2, kind: "computed" },
                       ]
                     : [],
-                });
+                };
+                frameCache.set(frame.id, frame);
+                out.push({ ...frame, bytes: framed.slice(0, 256) });
               }
+              while (frameCache.size > 1000) frameCache.delete(frameCache.keys().next().value);
               return out;
+            }
+
+            case "sent_frame": {
+              const frame = frameCache.get(args.id);
+              if (!frame) throw new Error("该帧已移出缓存，请暂停发送后重新选择");
+              return frame;
             }
 
             case "log_entries":
