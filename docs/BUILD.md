@@ -33,6 +33,7 @@ npm run dev
 ```bash
 cd src-tauri && cargo test        # 后端：单元 + 端到端
 npm run build                     # 前端类型检查 + 构建
+npm run test:build                # 前端产物同步与缓存保护测试
 ```
 
 端到端测试会绑定本机 UDP 端口并真实收发，其中组播回环一项依赖本机允许组播回环。
@@ -43,7 +44,9 @@ npm run build                     # 前端类型检查 + 构建
 npm run tauri build
 ```
 
-产物在 `src-tauri/target/release/bundle/`：
+产物在 Cargo target 目录的 `release/bundle/` 下。默认是 `src-tauri/target/`，
+设置了 `CARGO_TARGET_DIR` 或 `.cargo/config.toml` 时，以 `cargo metadata --no-deps --format-version 1`
+返回的 `target_directory` 为准：
 
 | 平台 | 产物 |
 |---|---|
@@ -54,21 +57,77 @@ npm run tauri build
 ## 免安装压缩包
 
 ```bash
-npm run build:portable
+npm run package:portable
 ```
 
 产物在 `release/`：一个 `产品名-v版本-平台-架构.zip`，外加解压后的同名目录（方便直接跑一下看看）。
-里面是 exe、`使用说明.md`、`示例数据/`、`便携版说明.txt` —— 解压即用，不需要安装程序。
+里面是 exe、`使用说明.md`、`示例数据/` —— 解压即用，不需要安装程序。
 
 常用参数：
 
 ```bash
-npm run build:portable -- --skip-build                          # 复用已有的 release 产物，只重新打包
-npm run build:portable -- -- --target x86_64-pc-windows-msvc    # 第二个 -- 之后原样转给 tauri build
+npm run package:portable -- --skip-build                         # 复用已有的 release 产物，只重新打包
+npm run package:portable -- -- --target x86_64-pc-windows-msvc     # 第二个 -- 之后原样转给 tauri build
 ```
 
 脚本做的事：`tauri build --no-bundle`（只编译，不生成 MSI/NSIS）→ 摆好目录 → 压缩。
 target 目录问 `cargo metadata` 要，不写死 `src-tauri/target`（`CARGO_TARGET_DIR` 可能把它挪走）。
+
+### 保留前端产物缓存
+
+`npm run build` 每次仍执行 TypeScript 检查和 Vite 构建。Vite 先写入
+`src-tauri/target/frontend-build/` 的独立暂存目录，成功后按内容同步到 `dist/`：
+
+- 内容相同的文件保留原有时间戳，避免 Tauri 嵌入相同资源时仍触发 Rust 重编译。
+- 新增、变化或损坏的文件会更新，旧哈希资源会清理。
+- 类型检查或 Vite 构建失败时，不覆盖上一次成功的 `dist/`。
+- 同步仅允许生成目录，拒绝目录链接；开发态 `npm run dev` 的行为不变。
+
+直接运行 `npm run tauri build` 与便携打包都会通过原有 `beforeBuildCommand` 使用这条流程，
+前端构建不会重复执行。图标没有重复生成步骤，因此无需额外图标缓存。
+
+查看 Rust 阶段的 timing 报告：
+
+```bash
+npm run tauri -- build --no-bundle -- --timings
+```
+
+报告在 Cargo target 目录的 `cargo-timings/` 下；它不包含前端构建、复制和 ZIP 压缩。
+
+### 2026-10-27 打包耗时实测
+
+Windows x64，24 个逻辑 CPU，rustc 1.96.1、Tauri CLI 2.11.4、Node 22.18.0。
+沿用 `package:portable` 的完整路径：类型检查、Vite、Tauri release `--no-bundle`、复制及 ZIP。
+测试制品放在独立目录，没有覆盖 `release/` 中已有的包，也没有清理共享 Cargo 缓存。
+使用默认主机 target、jobs=24，没有额外 RUSTFLAGS；测试时禁止联网下载依赖。
+
+最终配置只生成桌面程序需要的 `rlib`，保留 `opt-level=3`、`panic=abort` 和 `strip=true`，
+改用 ThinLTO、16 个代码生成单元。依赖预热后的结果如下：
+
+| 测量范围 | 优化前 | 优化后 | 耗时减少 |
+| --- | ---: | ---: | ---: |
+| 完整打包，需重编译应用库及 EXE | 125.6s | 31.3s | 约 75% |
+| 完整打包，完全无改动 | 125.6s | 5.3s | 约 96% |
+| Rust 阶段，需重编译应用库及 EXE | 120.8s | 26.4s | 约 78% |
+
+- 优化前完整打包两次为 126.3s、124.8s。即使没有改动，也因前端文件 mtime 变化而重编译两个单元。
+- 优化后重编译三次为 33.4s、29.9s、31.3s，中位数 31.3s；通过仅触碰 `src-tauri/src/lib.rs` 的 mtime
+  触发重编译，源文件内容不变。三次均为 453 个 Fresh、2 个 Dirty。
+- 优化后无改动两次为 5.31s、5.36s，455 个单元全部 Fresh；Cargo `Finished` 耗时为 0.33～0.37s。
+- 库类型切换首轮约 150.4s，包含依赖重建，并受另一轮试验触碰时间戳干扰；另一次锁等待试验已取消。
+  ThinLTO/代码生成配置切换首轮约 84.9s，也包含依赖重建。这些记录不计入热构建统计，后续有效样本均串行采集。
+- 仅保留 `rlib`、仍用 Fat LTO/单个代码生成单元时，一次热构建为 105.2s，仅作中间对照。
+
+EXE 从 5.33 MiB 增至 5.91 MiB，约增加 11%；ZIP 从 2.91 MiB 增至 2.99 MiB，约增加 3%。
+已逐文件核对 ZIP 内容、中文 UTF-8 文件名和内嵌图标；优化前后 DLL 导入一致，
+没有新增需要单独分发的 `vcruntime`/`msvcp` DLL，Windows 系统 UCRT 依赖仍然存在。
+
+验收通过 `npm run test:build` 的 4 项构建测试，以及
+`cargo test --manifest-path src-tauri/Cargo.toml --release --offline --quiet` 的 203 项测试
+（3 项大文件测试按原配置忽略）。还验证了真实 TypeScript 检查失败时，`dist` 内容及时间戳均不变。
+
+这些数字包含前端构建及 ZIP，不包含依赖安装和测试；不能当作空缓存首次构建的耗时。
+尚未测量 MSI/NSIS 安装包、打包后 GUI，以及现场数据的吞吐和微秒级抖动对照。
 
 ### 配置为什么不会跑到用户目录去
 

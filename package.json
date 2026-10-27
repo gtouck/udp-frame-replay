@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node scripts/build-frontend.mjs",
+    "test:build": "node --test scripts/build-frontend.test.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "package:portable": "node scripts/build-portable.mjs"

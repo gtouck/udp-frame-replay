@@ -7,7 +7,8 @@ rust-version = "1.77"
 
 [lib]
 name = "data_perf_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# 当前只发布桌面 EXE，Rust 库只供主程序和测试链接。
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -34,8 +35,9 @@ windows-sys = { version = "0.59", features = ["Win32_Media"] }
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+# 保留最高优化级别，使用 ThinLTO 和并行代码生成缩短发布构建。
+lto = "thin"
+codegen-units = 16
 panic = "abort"
 strip = true
 
